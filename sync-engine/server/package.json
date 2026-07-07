@@ -1,0 +1,19 @@
+{
+  "name": "sync-engine-server",
+  "version": "1.0.0",
+  "description": "Real-Time Collaborative Sync Engine — OT Core",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest --verbose",
+    "test:watch": "jest --watch --verbose",
+    "test:coverage": "jest --coverage --verbose"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "collectCoverageFrom": ["src/**/*.js"]
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
