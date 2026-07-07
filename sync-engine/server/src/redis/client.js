@@ -120,6 +120,76 @@ async function closeRedis() {
   }
 }
 
+// ─────────────────────────────────────────────────────────
+// CURSOR PRESENCE (ephemeral — short TTL, never persisted)
+// ─────────────────────────────────────────────────────────
+
+const CURSOR_TTL_SECONDS = 30; // auto-expires if client ghosts
+
+/**
+ * Store a user's cursor position in Redis.
+ * Key: cursor:{docId}:{userId}  →  Hash { position, color }
+ * TTL: 30s — refreshed on every cursor update.
+ * If client disconnects without sending cursor_leave,
+ * the key expires automatically after 30 seconds.
+ *
+ * @param {string} docId
+ * @param {string} userId
+ * @param {number} position
+ * @param {string} color
+ */
+async function setCursorInRedis(docId, userId, position, color) {
+  const client = getRedisClient();
+  if (!client) return; // graceful fallback — in-memory Map still works
+  const key = `cursor:${docId}:${userId}`;
+  await client.hset(key, 'position', position.toString(), 'color', color, 'userId', userId);
+  await client.expire(key, CURSOR_TTL_SECONDS);
+}
+
+/**
+ * Get all active cursors for a document from Redis.
+ * Returns an object: { userId: { position, color } }
+ *
+ * @param {string} docId
+ * @returns {Promise<Object>}
+ */
+async function getCursorsFromRedis(docId) {
+  const client = getRedisClient();
+  if (!client) return {};
+
+  // Scan for all keys matching cursor:{docId}:*
+  const pattern = `cursor:${docId}:*`;
+  let cursor = '0';
+  const result = {};
+
+  do {
+    const [nextCursor, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+    cursor = nextCursor;
+    for (const key of keys) {
+      const data = await client.hgetall(key);
+      if (data && data.userId) {
+        result[data.userId] = {
+          position: parseInt(data.position, 10),
+          color:    data.color,
+        };
+      }
+    }
+  } while (cursor !== '0');
+
+  return result;
+}
+
+/**
+ * Remove a user's cursor from Redis on disconnect.
+ * @param {string} docId
+ * @param {string} userId
+ */
+async function deleteCursorFromRedis(docId, userId) {
+  const client = getRedisClient();
+  if (!client) return;
+  await client.del(`cursor:${docId}:${userId}`);
+}
+
 module.exports = {
   getRedisClient,
   cacheOp,
@@ -127,4 +197,8 @@ module.exports = {
   cacheDocState,
   getCachedDocState,
   closeRedis,
+  // Cursor presence (ephemeral, multi-server safe via Redis TTL)
+  setCursorInRedis,
+  getCursorsFromRedis,
+  deleteCursorFromRedis,
 };

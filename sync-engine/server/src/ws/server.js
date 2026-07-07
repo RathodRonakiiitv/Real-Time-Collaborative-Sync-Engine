@@ -38,7 +38,8 @@ const { WebSocketServer } = require('ws');
 const { DocumentEngine }  = require('../ot/engine');
 const { verifyToken }     = require('../auth/jwt');
 const { checkRateLimit }  = require('../redis/ratelimit');
-const { cacheOp, getCachedOps, cacheDocState, getCachedDocState } = require('../redis/client');
+const { cacheOp, getCachedOps, cacheDocState, getCachedDocState,
+        setCursorInRedis, getCursorsFromRedis, deleteCursorFromRedis } = require('../redis/client');
 const { saveOp, getOpsSince: getOpsSinceDb } = require('../db/operations');
 const { saveSnapshot, getLatestSnapshot }     = require('../db/snapshots');
 
@@ -171,10 +172,27 @@ async function handleJoin(ws, data) {
   clientInfo.docs.add(docId);
 
   // Send joined message with current cursor state of all peers
-  const docCursors = cursors.get(docId) || new Map();
-  const cursorSnapshot = {};
-  for (const [uid, cur] of docCursors) {
-    if (uid !== clientInfo.userId) cursorSnapshot[uid] = cur;
+  // Try Redis first (works across multiple servers), fall back to in-memory Map
+  let cursorSnapshot = {};
+  try {
+    const redisCursors = await getCursorsFromRedis(docId);
+    if (Object.keys(redisCursors).length > 0) {
+      // Remove self from snapshot
+      delete redisCursors[clientInfo.userId];
+      cursorSnapshot = redisCursors;
+    } else {
+      // Fallback: in-memory cursors (single-server mode)
+      const docCursors = cursors.get(docId) || new Map();
+      for (const [uid, cur] of docCursors) {
+        if (uid !== clientInfo.userId) cursorSnapshot[uid] = cur;
+      }
+    }
+  } catch {
+    // Redis unavailable — use in-memory
+    const docCursors = cursors.get(docId) || new Map();
+    for (const [uid, cur] of docCursors) {
+      if (uid !== clientInfo.userId) cursorSnapshot[uid] = cur;
+    }
   }
 
   send(ws, {
@@ -247,7 +265,8 @@ async function handleOp(ws, data) {
 
 /**
  * Handle a cursor position update from a client.
- * Ephemeral — broadcast to peers but never saved to DB or Redis.
+ * Ephemeral — broadcast to peers but never saved to PostgreSQL.
+ * Stored in Redis with 30s TTL for multi-server support.
  */
 function handleCursor(ws, data) {
   const clientInfo = clients.get(ws);
@@ -259,11 +278,15 @@ function handleCursor(ws, data) {
 
   const color = getUserColor(clientInfo.userId);
 
-  // Update in-memory cursor state
+  // 1. Update in-memory cursor state (primary, always works)
   if (!cursors.has(docId)) cursors.set(docId, new Map());
   cursors.get(docId).set(clientInfo.userId, { position, color });
 
-  // Broadcast to all OTHER clients in the same room
+  // 2. Mirror to Redis (for multi-server support) — fire-and-forget
+  //    If Redis is unavailable, the in-memory Map handles it fine.
+  setCursorInRedis(docId, clientInfo.userId, position, color).catch(() => {});
+
+  // 3. Broadcast to all OTHER clients in the same room
   broadcast(docId, {
     type:     'cursor_move',
     docId,
@@ -412,11 +435,13 @@ function createWSServer(httpServer) {
             room.delete(ws);
             if (room.size === 0) rooms.delete(docId);
           }
-          // Remove cursor and notify peers this user left
+          // Remove cursor from in-memory Map and Redis, then notify peers
           const docCursors = cursors.get(docId);
           if (docCursors && clientInfo.userId) {
             docCursors.delete(clientInfo.userId);
             if (docCursors.size === 0) cursors.delete(docId);
+            // Remove from Redis (fire-and-forget)
+            deleteCursorFromRedis(docId, clientInfo.userId).catch(() => {});
             broadcast(docId, {
               type:   'cursor_leave',
               docId,
