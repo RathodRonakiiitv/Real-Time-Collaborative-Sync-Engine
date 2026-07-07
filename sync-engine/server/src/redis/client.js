@@ -40,7 +40,11 @@ function getRedisClient(url) {
       redisAvailable = true;
     });
     redis.on('error', (err) => {
-      console.error('[Redis] Error:', err.message);
+      // Only log first failure — suppress repeat spam when Redis is unavailable
+      if (redisAvailable) {
+        console.warn('[Redis] Unavailable — running without cache:', err.message);
+        redisAvailable = false;
+      }
     });
   }
   return redisAvailable ? redis : null;

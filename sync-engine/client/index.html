@@ -32,7 +32,6 @@
       flex-direction: column;
     }
 
-    /* ── Header ──────────────────────────────────────── */
     header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
@@ -43,196 +42,158 @@
       gap: 16px;
     }
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 16px;
-      letter-spacing: -0.5px;
-    }
-
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
     .logo-icon {
-      width: 28px;
-      height: 28px;
+      width: 28px; height: 28px;
       background: linear-gradient(135deg, var(--accent), #a78bfa);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
+      border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px;
     }
 
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .controls { display: flex; align-items: center; gap: 12px; }
 
-    input, button {
-      font-family: var(--font-sans);
-      font-size: 13px;
-      outline: none;
-    }
-
+    input, button { font-family: var(--font-sans); font-size: 13px; outline: none; }
     input {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 6px 12px;
-      border-radius: 6px;
-      width: 140px;
-      transition: border-color 0.2s;
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 6px; width: 140px; transition: border-color 0.2s;
     }
-
     input:focus { border-color: var(--accent); }
 
     button {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      padding: 6px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: all 0.2s;
+      background: var(--accent); color: #fff; border: none; padding: 6px 16px;
+      border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s;
     }
-
     button:hover { filter: brightness(1.15); transform: translateY(-1px); }
     button:active { transform: translateY(0); }
     button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-    /* ── Status Bar ──────────────────────────────────── */
     .status-bar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 6px 24px;
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      font-size: 12px;
-      color: var(--text-dim);
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 6px 24px; display: flex; align-items: center; gap: 20px;
+      font-size: 12px; color: var(--text-dim); flex-wrap: wrap;
     }
 
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+    .status-indicator { display: flex; align-items: center; gap: 6px; }
 
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--red);
-      transition: background 0.3s;
-    }
-
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); transition: background 0.3s; }
     .dot.connected { background: var(--green); box-shadow: 0 0 8px rgba(52, 211, 153, 0.5); }
     .dot.connecting { background: var(--yellow); animation: pulse 1s infinite; }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
     .badge {
-      background: var(--surface-2);
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-family: var(--font-mono);
-      font-size: 11px;
+      background: var(--surface-2); padding: 2px 8px;
+      border-radius: 4px; font-family: var(--font-mono); font-size: 11px;
     }
 
-    /* ── Main Editor ─────────────────────────────────── */
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      padding: 24px;
-      gap: 16px;
+    /* ── Cursor Presence Bar ──────────────────────────── */
+    #presenceBar {
+      display: flex; align-items: center; gap: 8px;
+      margin-left: auto; flex-wrap: wrap;
+    }
+
+    .presence-avatar {
+      display: flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 12px;
+      font-size: 11px; font-weight: 600;
+      border: 1.5px solid transparent;
+      transition: all 0.3s;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .presence-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+    /* ── Main Editor Area ────────────────────────────── */
+    main { flex: 1; display: flex; flex-direction: column; padding: 24px; gap: 16px; }
+
+    /* The editor wrapper holds the textarea + cursor overlays */
+    .editor-wrapper {
+      flex: 1; position: relative; min-height: 300px;
     }
 
     #editor {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 20px;
-      font-family: var(--font-mono);
-      font-size: 15px;
-      line-height: 1.7;
-      color: var(--text);
-      resize: none;
-      min-height: 300px;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%; height: 100%; min-height: 300px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px;
+      font-family: var(--font-mono); font-size: 15px; line-height: 1.7;
+      color: var(--text); resize: none; transition: border-color 0.2s, box-shadow 0.2s;
+      position: relative; z-index: 1;
+    }
+    #editor:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+    /* ── Cursor Tooltip Overlay ──────────────────────── */
+    /* We render a hidden mirror div to measure character positions */
+    #editorMirror {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      padding: 20px; /* must match #editor padding */
+      font-family: var(--font-mono); font-size: 15px; line-height: 1.7;
+      color: transparent; pointer-events: none; white-space: pre-wrap;
+      word-break: break-word; overflow: hidden; border-radius: 10px;
+      z-index: 2;
     }
 
-    #editor:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
+    .cursor-caret {
+      display: inline-block; width: 2px; height: 1.2em;
+      position: relative; vertical-align: text-bottom;
+      animation: caretBlink 1s ease-in-out infinite;
+      transition: left 0.1s ease;
     }
 
-    /* ── Op Log Panel ────────────────────────────────── */
+    @keyframes caretBlink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0.3; }
+    }
+
+    .cursor-label {
+      position: absolute; bottom: calc(100% + 3px); left: 0;
+      font-family: var(--font-sans); font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+      pointer-events: none; color: #fff; letter-spacing: 0.3px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+
+    /* ── Op Log ──────────────────────────────────────── */
     .log-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      max-height: 200px;
-      overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; max-height: 180px; overflow-y: auto;
     }
-
     .log-header {
-      padding: 10px 16px;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-dim);
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      background: var(--surface);
+      padding: 10px 16px; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface);
     }
-
     .log-entry {
-      padding: 6px 16px;
-      font-size: 12px;
-      font-family: var(--font-mono);
-      color: var(--text-dim);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      gap: 12px;
+      padding: 5px 16px; font-size: 12px; font-family: var(--font-mono);
+      color: var(--text-dim); border-bottom: 1px solid var(--border); display: flex; gap: 12px;
     }
-
     .log-entry:last-child { border-bottom: none; }
-    .log-entry .op-type { color: var(--accent); font-weight: 600; min-width: 50px; }
-    .log-entry .op-from { color: var(--green); min-width: 60px; }
+    .log-entry .op-type { font-weight: 600; min-width: 60px; }
+    .log-entry .op-from { color: var(--green); min-width: 80px; overflow: hidden; text-overflow: ellipsis; }
     .log-entry .op-detail { color: var(--text); }
 
-    /* ── Scrollbar ────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Header -->
   <header>
     <div class="logo">
       <div class="logo-icon">⚡</div>
       <span>Sync Engine</span>
     </div>
     <div class="controls">
-      <input type="text" id="userId"  placeholder="User ID"  value="">
-      <input type="text" id="docId"   placeholder="Doc ID"   value="demo-doc">
+      <input type="text" id="userId"  placeholder="User ID">
+      <input type="text" id="docId"   placeholder="Doc ID" value="demo-doc">
       <button id="connectBtn" onclick="toggleConnection()">Connect</button>
     </div>
   </header>
 
-  <!-- Status Bar -->
   <div class="status-bar">
     <div class="status-indicator">
       <div class="dot" id="statusDot"></div>
@@ -250,11 +211,16 @@
       <span>Ops recv:</span>
       <span class="badge" id="opsRecvBadge">0</span>
     </div>
+    <!-- Live presence avatars appear here -->
+    <div id="presenceBar"></div>
   </div>
 
-  <!-- Main Editor -->
   <main>
-    <textarea id="editor" placeholder="Connect and start typing to collaborate..."></textarea>
+    <div class="editor-wrapper">
+      <textarea id="editor" placeholder="Connect and start typing to collaborate..."></textarea>
+      <!-- Mirror div for cursor position calculation -->
+      <div id="editorMirror" aria-hidden="true"></div>
+    </div>
 
     <div class="log-panel">
       <div class="log-header">Operation Log</div>
@@ -263,63 +229,58 @@
   </main>
 
   <script>
-    // ── State ──────────────────────────────────────────
+    // ── State ─────────────────────────────────────────────
     let ws = null;
     let token = null;
     let currentVersion = 0;
     let opsSent = 0;
     let opsRecv = 0;
     let isConnected = false;
-    let pendingOps = [];        // buffered while typing fast
-    let lastSentContent = '';   // track what we last sent to diff
+    let lastSentContent = '';
 
-    // Assign a random user ID
-    const userIdInput = document.getElementById('userId');
-    userIdInput.value = 'user-' + Math.random().toString(36).slice(2, 7);
+    // Peer cursors: userId → { position, color }
+    const peerCursors = {};
 
-    const editor       = document.getElementById('editor');
-    const statusDot    = document.getElementById('statusDot');
-    const statusText   = document.getElementById('statusText');
-    const versionBadge = document.getElementById('versionBadge');
-    const opsSentBadge = document.getElementById('opsSentBadge');
-    const opsRecvBadge = document.getElementById('opsRecvBadge');
-    const connectBtn   = document.getElementById('connectBtn');
-    const opLogDiv     = document.getElementById('opLog');
+    const userIdInput   = document.getElementById('userId');
+    userIdInput.value   = 'user-' + Math.random().toString(36).slice(2, 7);
 
-    // ── Connection ─────────────────────────────────────
+    const editor        = document.getElementById('editor');
+    const mirror        = document.getElementById('editorMirror');
+    const statusDot     = document.getElementById('statusDot');
+    const statusText    = document.getElementById('statusText');
+    const versionBadge  = document.getElementById('versionBadge');
+    const opsSentBadge  = document.getElementById('opsSentBadge');
+    const opsRecvBadge  = document.getElementById('opsRecvBadge');
+    const connectBtn    = document.getElementById('connectBtn');
+    const opLogDiv      = document.getElementById('opLog');
+    const presenceBar   = document.getElementById('presenceBar');
+
+    // ── Connection ────────────────────────────────────────
     async function toggleConnection() {
-      if (isConnected) {
-        disconnect();
-        return;
-      }
+      if (isConnected) { disconnect(); return; }
       await connect();
     }
 
     async function connect() {
       const userId = userIdInput.value.trim() || 'anonymous';
       const docId  = document.getElementById('docId').value.trim() || 'demo-doc';
-
       setStatus('connecting', 'Connecting...');
       connectBtn.disabled = true;
 
       try {
-        // 1. Get a JWT token
-        const res = await fetch(`/api/token?userId=${encodeURIComponent(userId)}`);
+        const res  = await fetch(`/api/token?userId=${encodeURIComponent(userId)}`);
         const data = await res.json();
         token = data.token;
 
-        // 2. Connect WebSocket with token in query
         const wsUrl = `ws://${location.host}?token=${encodeURIComponent(token)}`;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          // Join the document room
           ws.send(JSON.stringify({ type: 'join', docId }));
         };
 
         ws.onmessage = (event) => {
-          const msg = JSON.parse(event.data);
-          handleMessage(msg);
+          handleMessage(JSON.parse(event.data));
         };
 
         ws.onclose = () => {
@@ -327,12 +288,11 @@
           isConnected = false;
           connectBtn.textContent = 'Connect';
           connectBtn.disabled = false;
+          // Clear all peer cursors on disconnect
+          Object.keys(peerCursors).forEach(uid => removePeerCursor(uid));
         };
 
-        ws.onerror = (err) => {
-          console.error('WS error:', err);
-          setStatus('disconnected', 'Error');
-        };
+        ws.onerror = () => setStatus('disconnected', 'Error');
       } catch (err) {
         console.error('Connection failed:', err);
         setStatus('disconnected', 'Failed');
@@ -347,7 +307,7 @@
       connectBtn.textContent = 'Connect';
     }
 
-    // ── Message Handler ────────────────────────────────
+    // ── Message Handler ───────────────────────────────────
     function handleMessage(msg) {
       switch (msg.type) {
         case 'auth_ok':
@@ -364,6 +324,12 @@
           setStatus('connected', `Connected as ${userIdInput.value}`);
           updateBadges();
           addLog('JOIN', 'server', `Joined doc (v${msg.version})`);
+          // Render any existing peer cursors in the room
+          if (msg.cursors) {
+            for (const [uid, cur] of Object.entries(msg.cursors)) {
+              updatePeerCursor(uid, cur.position, cur.color);
+            }
+          }
           break;
 
         case 'ack':
@@ -374,11 +340,8 @@
         case 'sync': {
           opsRecv++;
           currentVersion = msg.version;
-          // Apply remote op to our editor
           const cursorPos = editor.selectionStart;
-          applyRemoteOp(msg.op);
-          // Try to preserve cursor position
-          editor.setSelectionRange(cursorPos, cursorPos);
+          applyRemoteOp(msg.op, cursorPos);
           lastSentContent = editor.value;
           updateBadges();
           addLog(msg.op.type.toUpperCase(), msg.clientId, formatOp(msg.op));
@@ -393,6 +356,16 @@
           addLog('SYNC', 'server', `Caught up to v${msg.version}`);
           break;
 
+        // ── CURSOR PRESENCE ──────────────────────────────
+        case 'cursor_move':
+          updatePeerCursor(msg.userId, msg.position, msg.color);
+          break;
+
+        case 'cursor_leave':
+          removePeerCursor(msg.userId);
+          addLog('LEAVE', msg.userId, 'left the document');
+          break;
+
         case 'rate_limited':
           addLog('LIMIT', 'server', msg.message);
           break;
@@ -403,84 +376,163 @@
       }
     }
 
-    // ── Editor Input Handling ──────────────────────────
+    // ── Cursor Presence ───────────────────────────────────
+
+    /**
+     * Update or create the visual caret for a peer.
+     * We render carets inside a mirror <div> that has identical
+     * font/padding to the textarea, then position them via innerHTML.
+     */
+    function updatePeerCursor(userId, position, color) {
+      peerCursors[userId] = { position, color };
+      updatePresenceBar();
+      renderCursors();
+    }
+
+    function removePeerCursor(userId) {
+      delete peerCursors[userId];
+      updatePresenceBar();
+      renderCursors();
+    }
+
+    function renderCursors() {
+      const text = editor.value;
+      // Sort cursors by position so we can insert them left to right
+      const sorted = Object.entries(peerCursors)
+        .sort((a, b) => a[1].position - b[1].position);
+
+      let html = '';
+      let lastIdx = 0;
+
+      for (const [userId, { position, color }] of sorted) {
+        const pos = Math.min(position, text.length);
+        // Escape text chunk before this cursor
+        html += escapeHtml(text.slice(lastIdx, pos));
+        // Insert the caret element
+        html += `
+          <span class="cursor-caret" style="background:${color}">
+            <span class="cursor-label" style="background:${color}">${escapeHtml(userId)}</span>
+          </span>
+        `;
+        lastIdx = pos;
+      }
+
+      // Remaining text after last cursor
+      html += escapeHtml(text.slice(lastIdx));
+      mirror.innerHTML = html;
+    }
+
+    function updatePresenceBar() {
+      presenceBar.innerHTML = '';
+      for (const [userId, { color }] of Object.entries(peerCursors)) {
+        const avatar = document.createElement('div');
+        avatar.className = 'presence-avatar';
+        avatar.style.borderColor = color;
+        avatar.style.background = color + '22'; // 13% opacity
+        avatar.innerHTML = `
+          <span class="presence-dot" style="background:${color}"></span>
+          <span style="color:${color}">${escapeHtml(userId)}</span>
+        `;
+        presenceBar.appendChild(avatar);
+      }
+    }
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>')
+        .replace(/ /g, '&nbsp;');
+    }
+
+    // ── Send cursor position on every keyup/click ─────────
+    function sendCursor() {
+      if (!ws || !isConnected) return;
+      const docId = document.getElementById('docId').value.trim() || 'demo-doc';
+      ws.send(JSON.stringify({
+        type:     'cursor',
+        docId,
+        position: editor.selectionStart,
+      }));
+    }
+
+    editor.addEventListener('keyup',    sendCursor);
+    editor.addEventListener('click',    sendCursor);
+    editor.addEventListener('mouseup',  sendCursor);
+    editor.addEventListener('touchend', sendCursor);
+
+    // ── Editor Input Handling ─────────────────────────────
     let inputTimer = null;
     editor.addEventListener('input', () => {
       if (!isConnected) return;
       clearTimeout(inputTimer);
-      inputTimer = setTimeout(sendDiff, 50); // debounce 50ms
+      inputTimer = setTimeout(sendDiff, 50);
     });
 
     function sendDiff() {
       if (!ws || !isConnected) return;
-
       const oldText = lastSentContent;
       const newText = editor.value;
       if (oldText === newText) return;
 
-      // Find the first difference
       let start = 0;
-      while (start < oldText.length && start < newText.length && oldText[start] === newText[start]) {
-        start++;
-      }
+      while (start < oldText.length && start < newText.length && oldText[start] === newText[start]) start++;
 
-      // Find the last difference (from the end)
       let oldEnd = oldText.length;
       let newEnd = newText.length;
-      while (oldEnd > start && newEnd > start && oldText[oldEnd - 1] === newText[newEnd - 1]) {
-        oldEnd--;
-        newEnd--;
-      }
+      while (oldEnd > start && newEnd > start && oldText[oldEnd - 1] === newText[newEnd - 1]) { oldEnd--; newEnd--; }
 
-      const deletedLen = oldEnd - start;
-      const insertedText = newText.slice(start, newEnd);
+      const deletedLen    = oldEnd - start;
+      const insertedText  = newText.slice(start, newEnd);
+      const docId         = document.getElementById('docId').value.trim() || 'demo-doc';
 
-      const docId = document.getElementById('docId').value.trim() || 'demo-doc';
-
-      // Send delete op if text was removed
       if (deletedLen > 0) {
-        const delOp = { type: 'delete', position: start, length: deletedLen, clientId: userIdInput.value, version: currentVersion };
-        ws.send(JSON.stringify({ type: 'op', docId, op: delOp, version: currentVersion }));
+        const op = { type: 'delete', position: start, length: deletedLen, clientId: userIdInput.value, version: currentVersion };
+        ws.send(JSON.stringify({ type: 'op', docId, op, version: currentVersion }));
         opsSent++;
         addLog('DELETE', 'me', `pos=${start} len=${deletedLen}`);
       }
-
-      // Send insert op if text was added
       if (insertedText.length > 0) {
-        const insOp = { type: 'insert', position: start, text: insertedText, clientId: userIdInput.value, version: currentVersion };
-        ws.send(JSON.stringify({ type: 'op', docId, op: insOp, version: currentVersion }));
+        const op = { type: 'insert', position: start, text: insertedText, clientId: userIdInput.value, version: currentVersion };
+        ws.send(JSON.stringify({ type: 'op', docId, op, version: currentVersion }));
         opsSent++;
         addLog('INSERT', 'me', `pos=${start} "${insertedText}"`);
       }
 
       lastSentContent = newText;
+      renderCursors(); // re-render after doc changes
       updateBadges();
     }
 
-    // ── Apply Remote Operations ────────────────────────
-    function applyRemoteOp(op) {
+    // ── Apply Remote Operations ───────────────────────────
+    function applyRemoteOp(op, myPos) {
       const text = editor.value;
-
       if (op.type === 'insert') {
         const pos = Math.min(op.position, text.length);
         editor.value = text.slice(0, pos) + op.text + text.slice(pos);
+        const newPos = myPos >= pos ? myPos + op.text.length : myPos;
+        editor.setSelectionRange(newPos, newPos);
       } else if (op.type === 'delete') {
         const pos = Math.min(op.position, text.length);
         const end = Math.min(pos + op.length, text.length);
         editor.value = text.slice(0, pos) + text.slice(end);
+        const newPos = myPos > pos && myPos <= end ? pos : myPos > end ? myPos - op.length : myPos;
+        editor.setSelectionRange(newPos, newPos);
       }
+      renderCursors();
     }
 
-    // ── UI Helpers ─────────────────────────────────────
+    // ── UI Helpers ────────────────────────────────────────
     function setStatus(state, text) {
       statusDot.className = 'dot ' + state;
       statusText.textContent = text;
     }
 
     function updateBadges() {
-      versionBadge.textContent = currentVersion;
-      opsSentBadge.textContent = opsSent;
-      opsRecvBadge.textContent = opsRecv;
+      versionBadge.textContent  = currentVersion;
+      opsSentBadge.textContent  = opsSent;
+      opsRecvBadge.textContent  = opsRecv;
     }
 
     function formatOp(op) {
@@ -492,17 +544,18 @@
     function addLog(type, from, detail) {
       const entry = document.createElement('div');
       entry.className = 'log-entry';
+      // Color the type label based on type
+      const typeColor = { INSERT: '#6c63ff', DELETE: '#f87171', AUTH: '#34d399',
+                          JOIN: '#38bdf8',   SYNC: '#fbbf24',   CURSOR: '#a78bfa',
+                          LEAVE: '#fb923c',  ERROR: '#f87171',  LIMIT: '#fbbf24' };
+      const color = typeColor[type] || '#8b8fa3';
       entry.innerHTML = `
-        <span class="op-type">${type}</span>
-        <span class="op-from">${from}</span>
-        <span class="op-detail">${detail}</span>
+        <span class="op-type" style="color:${color}">${type}</span>
+        <span class="op-from">${escapeHtml(from)}</span>
+        <span class="op-detail">${escapeHtml(detail)}</span>
       `;
       opLogDiv.prepend(entry);
-
-      // Keep only last 50 entries
-      while (opLogDiv.children.length > 50) {
-        opLogDiv.removeChild(opLogDiv.lastChild);
-      }
+      while (opLogDiv.children.length > 50) opLogDiv.removeChild(opLogDiv.lastChild);
     }
   </script>
 </body>

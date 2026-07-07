@@ -5,6 +5,7 @@
  * connected WebSocket clients. Handles:
  *   - join       → client joins a document room
  *   - op         → client sends an operation
+ *   - cursor     → client broadcasts cursor position (ephemeral)
  *   - reconnect  → client sends buffered ops after disconnect
  *   - auth       → JWT validation on connection
  *   - rate limit → Token Bucket via Redis
@@ -15,15 +16,18 @@
  *     { type: 'auth',      token }
  *     { type: 'join',      docId }
  *     { type: 'op',        docId, op, version }
+ *     { type: 'cursor',    docId, position }
  *     { type: 'reconnect', docId, baseVersion, bufferedOps }
  *
  *   Server → Client:
- *     { type: 'auth_ok',   userId }
- *     { type: 'auth_error', message }
- *     { type: 'joined',    docId, doc, version }
- *     { type: 'sync',      docId, op, version, clientId }
- *     { type: 'catch_up',  docId, ops, version }
- *     { type: 'error',     message, code }
+ *     { type: 'auth_ok',      userId }
+ *     { type: 'auth_error',   message }
+ *     { type: 'joined',       docId, doc, version, cursors }
+ *     { type: 'sync',         docId, op, version, clientId }
+ *     { type: 'cursor_move',  docId, userId, position, color }
+ *     { type: 'cursor_leave', docId, userId }
+ *     { type: 'catch_up',     docId, ops, version }
+ *     { type: 'error',        message, code }
  *     { type: 'rate_limited', message, retryAfterMs }
  * ==========================================================
  */
@@ -52,6 +56,34 @@ const rooms = new Map();
 
 /** @type {Map<WebSocket, { userId: string, authenticated: boolean, docs: Set<string> }>} */
 const clients = new Map();
+
+/**
+ * Ephemeral cursor presence — NOT persisted, lost on server restart.
+ * Structure: docId → Map<userId, { position: number, color: string }>
+ * @type {Map<string, Map<string, { position: number, color: string }>>}
+ */
+const cursors = new Map();
+
+// Deterministic color palette — each user gets a consistent color
+const CURSOR_COLORS = [
+  '#f87171', // red
+  '#fb923c', // orange
+  '#facc15', // yellow
+  '#34d399', // green
+  '#38bdf8', // blue
+  '#a78bfa', // purple
+  '#f472b6', // pink
+  '#2dd4bf', // teal
+];
+
+/** Assign a color to a userId deterministically */
+function getUserColor(userId) {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
+  }
+  return CURSOR_COLORS[hash % CURSOR_COLORS.length];
+}
 
 // ─────────────────────────────────────────────────────────
 // ENGINE MANAGEMENT
@@ -138,11 +170,19 @@ async function handleJoin(ws, data) {
   rooms.get(docId).add(ws);
   clientInfo.docs.add(docId);
 
+  // Send joined message with current cursor state of all peers
+  const docCursors = cursors.get(docId) || new Map();
+  const cursorSnapshot = {};
+  for (const [uid, cur] of docCursors) {
+    if (uid !== clientInfo.userId) cursorSnapshot[uid] = cur;
+  }
+
   send(ws, {
     type:    'joined',
     docId,
     doc:     engine.getDocument(),
     version: engine.getVersion(),
+    cursors: cursorSnapshot,  // existing peers' cursors
   });
 
   console.log(`[WS] Client ${clientInfo.userId} joined doc=${docId} (${rooms.get(docId).size} clients)`);
@@ -203,6 +243,34 @@ async function handleOp(ws, data) {
     console.error(`[WS] Op error doc=${docId}:`, err.message);
     send(ws, { type: 'error', message: err.message, code: 'OP_ERROR' });
   }
+}
+
+/**
+ * Handle a cursor position update from a client.
+ * Ephemeral — broadcast to peers but never saved to DB or Redis.
+ */
+function handleCursor(ws, data) {
+  const clientInfo = clients.get(ws);
+  if (!clientInfo || !clientInfo.authenticated) return;
+
+  const { docId, position } = data;
+  if (typeof position !== 'number' || position < 0) return;
+  if (!rooms.has(docId)) return;
+
+  const color = getUserColor(clientInfo.userId);
+
+  // Update in-memory cursor state
+  if (!cursors.has(docId)) cursors.set(docId, new Map());
+  cursors.get(docId).set(clientInfo.userId, { position, color });
+
+  // Broadcast to all OTHER clients in the same room
+  broadcast(docId, {
+    type:     'cursor_move',
+    docId,
+    userId:   clientInfo.userId,
+    position,
+    color,
+  }, ws);
 }
 
 async function handleReconnect(ws, data) {
@@ -328,6 +396,7 @@ function createWSServer(httpServer) {
         case 'auth':      await handleAuth(ws, data);      break;
         case 'join':      await handleJoin(ws, data);      break;
         case 'op':        await handleOp(ws, data);        break;
+        case 'cursor':    handleCursor(ws, data);          break; // sync, no await needed
         case 'reconnect': await handleReconnect(ws, data); break;
         default:
           send(ws, { type: 'error', message: `Unknown message type: ${data.type}`, code: 'UNKNOWN_TYPE' });
@@ -337,12 +406,22 @@ function createWSServer(httpServer) {
     ws.on('close', () => {
       const clientInfo = clients.get(ws);
       if (clientInfo) {
-        // Remove from all rooms
         for (const docId of clientInfo.docs) {
           const room = rooms.get(docId);
           if (room) {
             room.delete(ws);
             if (room.size === 0) rooms.delete(docId);
+          }
+          // Remove cursor and notify peers this user left
+          const docCursors = cursors.get(docId);
+          if (docCursors && clientInfo.userId) {
+            docCursors.delete(clientInfo.userId);
+            if (docCursors.size === 0) cursors.delete(docId);
+            broadcast(docId, {
+              type:   'cursor_leave',
+              docId,
+              userId: clientInfo.userId,
+            });
           }
         }
         console.log(`[WS] Client ${clientInfo.userId || 'unknown'} disconnected`);
