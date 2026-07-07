@@ -250,11 +250,11 @@ describe('transform: Case C — delete vs insert', () => {
     expect(op2p.position).toBe(1); // unchanged
   });
 
-  test('C2: insert inside deleted range → clamped to delete start', () => {
+  test('C2: insert inside deleted range → absorbed (null)', () => {
     const op1  = createDelete(2, 3, 'a', 0);  // delete "cde" [2..5)
     const op2  = createInsert(3, 'X', 'b', 0); // was inside "cde"
     const op2p = transform(op1, op2);
-    expect(op2p.position).toBe(2); // clamped to deletion boundary
+    expect(op2p).toBeNull(); // insert absorbed by delete (delete-wins policy)
   });
 
   test('C3: insert after deleted range → shifted left', () => {
@@ -274,6 +274,13 @@ describe('transform: Case C — delete vs insert', () => {
   test('C5: convergence proof', () => {
     const op1 = createDelete(2, 2, 'a', 0);
     const op2 = createInsert(4, 'Z', 'b', 0);
+    const { converged } = converges(doc, op1, op2);
+    expect(converged).toBe(true);
+  });
+
+  test('C6: convergence — insert inside delete range (TP1 symmetry)', () => {
+    const op1 = createDelete(1, 3, 'a', 0);  // delete "bcd"
+    const op2 = createInsert(2, 'X', 'b', 0); // insert inside deleted range
     const { converged } = converges(doc, op1, op2);
     expect(converged).toBe(true);
   });

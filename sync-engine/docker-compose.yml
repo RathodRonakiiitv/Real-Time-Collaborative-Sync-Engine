@@ -1,0 +1,54 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: syncuser
+      POSTGRES_PASSWORD: syncpass
+      POSTGRES_DB: syncengine
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U syncuser -d syncengine']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build: ./server
+    ports:
+      - '3000:3000'
+    environment:
+      PORT: 3000
+      REDIS_URL: redis://redis:6379
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: syncuser
+      PG_PASSWORD: syncpass
+      PG_DATABASE: syncengine
+      JWT_SECRET: change-me-in-production
+      RATE_LIMIT_OPS_PER_SEC: 30
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+  pg-data:

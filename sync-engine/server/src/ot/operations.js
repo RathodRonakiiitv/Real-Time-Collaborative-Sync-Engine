@@ -183,9 +183,12 @@ function transform(op1, op2) {
     }
 
     if (op2.position < deleteEnd) {
-      // C2: insert was strictly inside the now-deleted range
-      // → clamp to the deletion start (the closest valid anchor)
-      return { ...op2, position: op1.position };
+      // C2: insert was strictly inside the now-deleted range.
+      // The delete already removed this region; the insert is absorbed.
+      // This ensures TP1 symmetry with Case B2 (extend-delete policy):
+      //   apply(apply(doc, ins), transform(ins, del))
+      //   === apply(apply(doc, del), transform(del, ins))
+      return null;
     }
 
     // C3: insert is at or after the end of the deletion range → shift left

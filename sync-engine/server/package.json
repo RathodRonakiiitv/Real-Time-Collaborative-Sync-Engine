@@ -4,16 +4,30 @@
   "description": "Real-Time Collaborative Sync Engine — OT Core",
   "main": "src/index.js",
   "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
     "test": "jest --verbose",
     "test:watch": "jest --watch --verbose",
     "test:coverage": "jest --coverage --verbose"
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"],
-    "collectCoverageFrom": ["src/**/*.js"]
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js"
+    ]
   },
   "devDependencies": {
     "jest": "^29.7.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "ioredis": "^5.11.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0",
+    "uuid": "^14.0.1",
+    "ws": "^8.21.0"
   }
 }

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sync Engine — Collaborative Editor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-2: #242736;
+      --border: #2e3144;
+      --text: #e4e6f0;
+      --text-dim: #8b8fa3;
+      --accent: #6c63ff;
+      --accent-glow: rgba(108, 99, 255, 0.3);
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-sans: 'Inter', -apple-system, sans-serif;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ──────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    input, button {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      outline: none;
+    }
+
+    input {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      width: 140px;
+      transition: border-color 0.2s;
+    }
+
+    input:focus { border-color: var(--accent); }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    button:hover { filter: brightness(1.15); transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── Status Bar ──────────────────────────────────── */
+    .status-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      transition: background 0.3s;
+    }
+
+    .dot.connected { background: var(--green); box-shadow: 0 0 8px rgba(52, 211, 153, 0.5); }
+    .dot.connecting { background: var(--yellow); animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .badge {
+      background: var(--surface-2);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    /* ── Main Editor ─────────────────────────────────── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    #editor {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      font-family: var(--font-mono);
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text);
+      resize: none;
+      min-height: 300px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #editor:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    /* ── Op Log Panel ────────────────────────────────── */
+    .log-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .log-header {
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+    }
+
+    .log-entry {
+      padding: 6px 16px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+    }
+
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry .op-type { color: var(--accent); font-weight: 600; min-width: 50px; }
+    .log-entry .op-from { color: var(--green); min-width: 60px; }
+    .log-entry .op-detail { color: var(--text); }
+
+    /* ── Scrollbar ────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⚡</div>
+      <span>Sync Engine</span>
+    </div>
+    <div class="controls">
+      <input type="text" id="userId"  placeholder="User ID"  value="">
+      <input type="text" id="docId"   placeholder="Doc ID"   value="demo-doc">
+      <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+    </div>
+  </header>
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-indicator">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Disconnected</span>
+    </div>
+    <div class="status-indicator">
+      <span>Version:</span>
+      <span class="badge" id="versionBadge">0</span>
+    </div>
+    <div class="status-indicator">
+      <span>Ops sent:</span>
+      <span class="badge" id="opsSentBadge">0</span>
+    </div>
+    <div class="status-indicator">
+      <span>Ops recv:</span>
+      <span class="badge" id="opsRecvBadge">0</span>
+    </div>
+  </div>
+
+  <!-- Main Editor -->
+  <main>
+    <textarea id="editor" placeholder="Connect and start typing to collaborate..."></textarea>
+
+    <div class="log-panel">
+      <div class="log-header">Operation Log</div>
+      <div id="opLog"></div>
+    </div>
+  </main>
+
+  <script>
+    // ── State ──────────────────────────────────────────
+    let ws = null;
+    let token = null;
+    let currentVersion = 0;
+    let opsSent = 0;
+    let opsRecv = 0;
+    let isConnected = false;
+    let pendingOps = [];        // buffered while typing fast
+    let lastSentContent = '';   // track what we last sent to diff
+
+    // Assign a random user ID
+    const userIdInput = document.getElementById('userId');
+    userIdInput.value = 'user-' + Math.random().toString(36).slice(2, 7);
+
+    const editor       = document.getElementById('editor');
+    const statusDot    = document.getElementById('statusDot');
+    const statusText   = document.getElementById('statusText');
+    const versionBadge = document.getElementById('versionBadge');
+    const opsSentBadge = document.getElementById('opsSentBadge');
+    const opsRecvBadge = document.getElementById('opsRecvBadge');
+    const connectBtn   = document.getElementById('connectBtn');
+    const opLogDiv     = document.getElementById('opLog');
+
+    // ── Connection ─────────────────────────────────────
+    async function toggleConnection() {
+      if (isConnected) {
+        disconnect();
+        return;
+      }
+      await connect();
+    }
+
+    async function connect() {
+      const userId = userIdInput.value.trim() || 'anonymous';
+      const docId  = document.getElementById('docId').value.trim() || 'demo-doc';
+
+      setStatus('connecting', 'Connecting...');
+      connectBtn.disabled = true;
+
+      try {
+        // 1. Get a JWT token
+        const res = await fetch(`/api/token?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        token = data.token;
+
+        // 2. Connect WebSocket with token in query
+        const wsUrl = `ws://${location.host}?token=${encodeURIComponent(token)}`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          // Join the document room
+          ws.send(JSON.stringify({ type: 'join', docId }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          handleMessage(msg);
+        };
+
+        ws.onclose = () => {
+          setStatus('disconnected', 'Disconnected');
+          isConnected = false;
+          connectBtn.textContent = 'Connect';
+          connectBtn.disabled = false;
+        };
+
+        ws.onerror = (err) => {
+          console.error('WS error:', err);
+          setStatus('disconnected', 'Error');
+        };
+      } catch (err) {
+        console.error('Connection failed:', err);
+        setStatus('disconnected', 'Failed');
+        connectBtn.disabled = false;
+      }
+    }
+
+    function disconnect() {
+      if (ws) ws.close();
+      ws = null;
+      isConnected = false;
+      connectBtn.textContent = 'Connect';
+    }
+
+    // ── Message Handler ────────────────────────────────
+    function handleMessage(msg) {
+      switch (msg.type) {
+        case 'auth_ok':
+          addLog('AUTH', msg.userId, 'Authenticated');
+          break;
+
+        case 'joined':
+          isConnected = true;
+          currentVersion = msg.version;
+          lastSentContent = msg.doc;
+          editor.value = msg.doc;
+          connectBtn.textContent = 'Disconnect';
+          connectBtn.disabled = false;
+          setStatus('connected', `Connected as ${userIdInput.value}`);
+          updateBadges();
+          addLog('JOIN', 'server', `Joined doc (v${msg.version})`);
+          break;
+
+        case 'ack':
+          currentVersion = msg.version;
+          updateBadges();
+          break;
+
+        case 'sync': {
+          opsRecv++;
+          currentVersion = msg.version;
+          // Apply remote op to our editor
+          const cursorPos = editor.selectionStart;
+          applyRemoteOp(msg.op);
+          // Try to preserve cursor position
+          editor.setSelectionRange(cursorPos, cursorPos);
+          lastSentContent = editor.value;
+          updateBadges();
+          addLog(msg.op.type.toUpperCase(), msg.clientId, formatOp(msg.op));
+          break;
+        }
+
+        case 'catch_up':
+          currentVersion = msg.version;
+          editor.value = msg.doc;
+          lastSentContent = msg.doc;
+          updateBadges();
+          addLog('SYNC', 'server', `Caught up to v${msg.version}`);
+          break;
+
+        case 'rate_limited':
+          addLog('LIMIT', 'server', msg.message);
+          break;
+
+        case 'error':
+          addLog('ERROR', 'server', msg.message);
+          break;
+      }
+    }
+
+    // ── Editor Input Handling ──────────────────────────
+    let inputTimer = null;
+    editor.addEventListener('input', () => {
+      if (!isConnected) return;
+      clearTimeout(inputTimer);
+      inputTimer = setTimeout(sendDiff, 50); // debounce 50ms
+    });
+
+    function sendDiff() {
+      if (!ws || !isConnected) return;
+
+      const oldText = lastSentContent;
+      const newText = editor.value;
+      if (oldText === newText) return;
+
+      // Find the first difference
+      let start = 0;
+      while (start < oldText.length && start < newText.length && oldText[start] === newText[start]) {
+        start++;
+      }
+
+      // Find the last difference (from the end)
+      let oldEnd = oldText.length;
+      let newEnd = newText.length;
+      while (oldEnd > start && newEnd > start && oldText[oldEnd - 1] === newText[newEnd - 1]) {
+        oldEnd--;
+        newEnd--;
+      }
+
+      const deletedLen = oldEnd - start;
+      const insertedText = newText.slice(start, newEnd);
+
+      const docId = document.getElementById('docId').value.trim() || 'demo-doc';
+
+      // Send delete op if text was removed
+      if (deletedLen > 0) {
+        const delOp = { type: 'delete', position: start, length: deletedLen, clientId: userIdInput.value, version: currentVersion };
+        ws.send(JSON.stringify({ type: 'op', docId, op: delOp, version: currentVersion }));
+        opsSent++;
+        addLog('DELETE', 'me', `pos=${start} len=${deletedLen}`);
+      }
+
+      // Send insert op if text was added
+      if (insertedText.length > 0) {
+        const insOp = { type: 'insert', position: start, text: insertedText, clientId: userIdInput.value, version: currentVersion };
+        ws.send(JSON.stringify({ type: 'op', docId, op: insOp, version: currentVersion }));
+        opsSent++;
+        addLog('INSERT', 'me', `pos=${start} "${insertedText}"`);
+      }
+
+      lastSentContent = newText;
+      updateBadges();
+    }
+
+    // ── Apply Remote Operations ────────────────────────
+    function applyRemoteOp(op) {
+      const text = editor.value;
+
+      if (op.type === 'insert') {
+        const pos = Math.min(op.position, text.length);
+        editor.value = text.slice(0, pos) + op.text + text.slice(pos);
+      } else if (op.type === 'delete') {
+        const pos = Math.min(op.position, text.length);
+        const end = Math.min(pos + op.length, text.length);
+        editor.value = text.slice(0, pos) + text.slice(end);
+      }
+    }
+
+    // ── UI Helpers ─────────────────────────────────────
+    function setStatus(state, text) {
+      statusDot.className = 'dot ' + state;
+      statusText.textContent = text;
+    }
+
+    function updateBadges() {
+      versionBadge.textContent = currentVersion;
+      opsSentBadge.textContent = opsSent;
+      opsRecvBadge.textContent = opsRecv;
+    }
+
+    function formatOp(op) {
+      if (op.type === 'insert') return `pos=${op.position} "${op.text}"`;
+      if (op.type === 'delete') return `pos=${op.position} len=${op.length}`;
+      return JSON.stringify(op);
+    }
+
+    function addLog(type, from, detail) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span class="op-type">${type}</span>
+        <span class="op-from">${from}</span>
+        <span class="op-detail">${detail}</span>
+      `;
+      opLogDiv.prepend(entry);
+
+      // Keep only last 50 entries
+      while (opLogDiv.children.length > 50) {
+        opLogDiv.removeChild(opLogDiv.lastChild);
+      }
+    }
+  </script>
+</body>
+</html>
