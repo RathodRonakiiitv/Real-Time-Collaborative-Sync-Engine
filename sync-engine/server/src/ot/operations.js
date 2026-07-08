@@ -6,12 +6,13 @@
  *
  * Operation Schema:
  *   {
- *     type     : 'insert' | 'delete'
- *     position : number          — 0-based index into document string
- *     text     : string          — content to insert (insert ops only)
- *     length   : number          — chars to remove (delete ops only)
- *     clientId : string          — originating client identifier
- *     version  : number          — document version this op was based on
+ *     type        : 'insert' | 'delete'
+ *     position    : number          — 0-based index into document string
+ *     text        : string          — content to insert (insert ops only)
+ *     length      : number          — chars to remove (delete ops only)
+ *     deletedText : string          — captured at apply-time (delete ops, for undo)
+ *     clientId    : string          — originating client identifier
+ *     version     : number          — document version this op was based on
  *   }
  *
  * Conflict cases handled by transform(op1, op2):
@@ -71,22 +72,33 @@ function createDelete(position, length, clientId, version) {
 /**
  * Apply an operation to a document string.
  * Pure function — returns a new string, never mutates.
+ *
+ * For DELETE ops, also returns `deletedText` so the engine can
+ * store it in the op log and reconstruct the inverse for undo.
+ *
  * @param {string}    doc - Current document content
  * @param {Operation} op  - Operation to apply
- * @returns {string} New document content
+ * @returns {{ doc: string, deletedText: string|null }}
  */
 function applyOp(doc, op) {
   if (typeof doc !== 'string') throw new TypeError('doc must be a string');
 
   if (op.type === 'insert') {
-    const pos = Math.min(op.position, doc.length); // clamp to end if beyond length
-    return doc.slice(0, pos) + op.text + doc.slice(pos);
+    const pos = Math.min(op.position, doc.length);
+    return {
+      doc:         doc.slice(0, pos) + op.text + doc.slice(pos),
+      deletedText: null,
+    };
   }
 
   if (op.type === 'delete') {
     const pos    = Math.min(op.position, doc.length);
     const endPos = Math.min(pos + op.length, doc.length);
-    return doc.slice(0, pos) + doc.slice(endPos);
+    const deletedText = doc.slice(pos, endPos); // capture before removing
+    return {
+      doc:         doc.slice(0, pos) + doc.slice(endPos),
+      deletedText,
+    };
   }
 
   throw new TypeError(`Unknown operation type: ${op.type}`);
@@ -247,7 +259,53 @@ function transform(op1, op2) {
 }
 
 // ─────────────────────────────────────────────────────────
-// 4. VALIDATION HELPERS
+// 5. INVERSE OPERATION  ← needed for per-user selective undo
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Compute the inverse of an operation.
+ *
+ * invertOp(insert(pos, text))   → delete(pos, text.length)
+ * invertOp(delete(pos, len))    → insert(pos, deletedText)
+ *
+ * IMPORTANT: For delete ops the inverse needs the original
+ * characters that were deleted. These are stored as `deletedText`
+ * on the op log entry at apply-time (see DocumentEngine.receiveOp).
+ *
+ * @param {Operation} op  - Original op (must have .deletedText for deletes)
+ * @returns {Operation}   - Inverse op
+ */
+function invertOp(op) {
+  if (op.type === 'insert') {
+    // Undo an insert by deleting exactly those characters
+    return {
+      type:     'delete',
+      position: op.position,
+      length:   op.text.length,
+      clientId: op.clientId,
+      version:  op.version,
+    };
+  }
+
+  if (op.type === 'delete') {
+    // Undo a delete by re-inserting the deleted text
+    if (!op.deletedText) {
+      throw new Error('Cannot invert delete op: deletedText is missing. Was it captured at apply-time?');
+    }
+    return {
+      type:     'insert',
+      position: op.position,
+      text:     op.deletedText,
+      clientId: op.clientId,
+      version:  op.version,
+    };
+  }
+
+  throw new TypeError(`Cannot invert unknown op type: ${op.type}`);
+}
+
+// ─────────────────────────────────────────────────────────
+// 6. VALIDATION HELPERS
 // ─────────────────────────────────────────────────────────
 
 /**
@@ -284,13 +342,14 @@ function validateOp(op) {
  */
 function applyAll(doc, ops) {
   return ops.reduce((current, op) => {
-    if (op === null) return current; // skip no-ops from transform
-    return applyOp(current, op);
+    if (op === null) return current;
+    const result = applyOp(current, op);
+    return result.doc;
   }, doc);
 }
 
 // ─────────────────────────────────────────────────────────
-// 5. EXPORTS
+// 7. EXPORTS
 // ─────────────────────────────────────────────────────────
 
 module.exports = {
@@ -300,4 +359,6 @@ module.exports = {
   applyAll,
   transform,
   validateOp,
+  invertOp,
 };
+

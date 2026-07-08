@@ -14,15 +14,17 @@ const {
 // Proves:  apply(apply(doc, op1), transform(op1, op2))
 //        === apply(apply(doc, op2), transform(op2, op1))
 // ─────────────────────────────────────────────────────────────────────────────
+function applyOpDoc(doc, op) { return applyOp(doc, op).doc; }
+
 function converges(doc, op1, op2) {
   const op2prime = transform(op1, op2);
   const op1prime = transform(op2, op1);
 
-  let left  = applyOp(doc, op1);
-  if (op2prime !== null) left = applyOp(left, op2prime);
+  let left  = applyOpDoc(doc, op1);
+  if (op2prime !== null) left = applyOpDoc(left, op2prime);
 
-  let right = applyOp(doc, op2);
-  if (op1prime !== null) right = applyOp(right, op1prime);
+  let right = applyOpDoc(doc, op2);
+  if (op1prime !== null) right = applyOpDoc(right, op1prime);
 
   return { left, right, converged: left === right };
 }
@@ -88,39 +90,50 @@ describe('validateOp', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe('applyOp', () => {
   test('insert at start', () => {
-    expect(applyOp('hello', createInsert(0, 'X', 'a', 0))).toBe('Xhello');
+    expect(applyOp('hello', createInsert(0, 'X', 'a', 0)).doc).toBe('Xhello');
   });
 
   test('insert in middle', () => {
-    expect(applyOp('hello', createInsert(2, '**', 'a', 0))).toBe('he**llo');
+    expect(applyOp('hello', createInsert(2, '**', 'a', 0)).doc).toBe('he**llo');
   });
 
   test('insert at end', () => {
-    expect(applyOp('hello', createInsert(5, '!', 'a', 0))).toBe('hello!');
+    expect(applyOp('hello', createInsert(5, '!', 'a', 0)).doc).toBe('hello!');
   });
 
   test('insert beyond end clamps to end', () => {
-    expect(applyOp('hi', createInsert(100, '!', 'a', 0))).toBe('hi!');
+    expect(applyOp('hi', createInsert(100, '!', 'a', 0)).doc).toBe('hi!');
   });
 
   test('delete from start', () => {
-    expect(applyOp('hello', createDelete(0, 2, 'a', 0))).toBe('llo');
+    expect(applyOp('hello', createDelete(0, 2, 'a', 0)).doc).toBe('llo');
   });
 
   test('delete from middle', () => {
-    expect(applyOp('hello world', createDelete(5, 6, 'a', 0))).toBe('hello');
+    expect(applyOp('hello world', createDelete(5, 6, 'a', 0)).doc).toBe('hello');
   });
 
   test('delete entire string', () => {
-    expect(applyOp('abc', createDelete(0, 3, 'a', 0))).toBe('');
+    expect(applyOp('abc', createDelete(0, 3, 'a', 0)).doc).toBe('');
   });
 
   test('delete beyond end clamps gracefully', () => {
-    expect(applyOp('hi', createDelete(1, 100, 'a', 0))).toBe('h');
+    expect(applyOp('hi', createDelete(1, 100, 'a', 0)).doc).toBe('h');
   });
 
   test('throws on non-string doc', () => {
     expect(() => applyOp(42, createInsert(0, 'x', 'a', 0))).toThrow(TypeError);
+  });
+
+  test('returns deletedText for delete ops', () => {
+    const { doc, deletedText } = applyOp('hello', createDelete(1, 3, 'a', 0));
+    expect(doc).toBe('ho');
+    expect(deletedText).toBe('ell');
+  });
+
+  test('deletedText is null for insert ops', () => {
+    const { deletedText } = applyOp('hi', createInsert(2, '!', 'a', 0));
+    expect(deletedText).toBeNull();
   });
 });
 
@@ -131,11 +144,11 @@ describe('transform: Case A — insert vs insert', () => {
   const doc = 'hello';
 
   test('A1: op1 inserts before op2 → shift op2 right', () => {
-    const op1 = createInsert(0, 'XX', 'a', 0); // "XXhello"
-    const op2 = createInsert(2, 'YY', 'b', 0); // wants pos 2
+    const op1 = createInsert(0, 'XX', 'a', 0);
+    const op2 = createInsert(2, 'YY', 'b', 0);
     const op2p = transform(op1, op2);
-    expect(op2p.position).toBe(4); // shifted right by 2
-    const result = applyOp(applyOp(doc, op1), op2p);
+    expect(op2p.position).toBe(4);
+    const result = applyOpDoc(applyOpDoc(doc, op1), op2p);
     expect(result).toBe('XXheYYllo');
   });
 
@@ -143,10 +156,8 @@ describe('transform: Case A — insert vs insert', () => {
     const op1 = createInsert(4, 'XX', 'a', 0);
     const op2 = createInsert(1, 'YY', 'b', 0);
     const op2p = transform(op1, op2);
-    expect(op2p.position).toBe(1); // unchanged — op1 is after op2
-    const result = applyOp(applyOp(doc, op1), op2p);
-    // doc='hello', op1 inserts 'XX' at 4 → 'hellXXo'
-    // op2p inserts 'YY' at 1 → 'hYYellXXo'
+    expect(op2p.position).toBe(1);
+    const result = applyOpDoc(applyOpDoc(doc, op1), op2p);
     expect(result).toBe('hYYellXXo');
   });
 
@@ -155,7 +166,7 @@ describe('transform: Case A — insert vs insert', () => {
     const op2 = createInsert(2, 'BB', 'clientB', 0);
     const op2p = transform(op1, op2);
     expect(op2p.position).toBe(4);
-    const result = applyOp(applyOp(doc, op1), op2p);
+    const result = applyOpDoc(applyOpDoc(doc, op1), op2p);
     expect(result).toBe('heAABBllo');
   });
 
@@ -197,12 +208,12 @@ describe('transform: Case B — insert vs delete', () => {
   const doc = 'hello world';
 
   test('B1: insert before delete range → shift delete start right', () => {
-    const op1  = createInsert(0, 'XX', 'a', 0); // inserts 2 chars at 0
-    const op2  = createDelete(6, 5, 'b', 0);    // delete "world" [6..11)
+    const op1  = createInsert(0, 'XX', 'a', 0);
+    const op2  = createDelete(6, 5, 'b', 0);
     const op2p = transform(op1, op2);
-    expect(op2p.position).toBe(8);              // shifted right by 2
+    expect(op2p.position).toBe(8);
     expect(op2p.length).toBe(5);
-    const result = applyOp(applyOp(doc, op1), op2p);
+    const result = applyOpDoc(applyOpDoc(doc, op1), op2p);
     expect(result).toBe('XXhello ');
   });
 
@@ -417,23 +428,21 @@ describe('Formal Convergence Proofs', () => {
     const doc = 'ABCDE';
     const op1 = createInsert(0, 'X', 'a', 0);
     const op2 = createInsert(2, 'Y', 'b', 0);
-    const op3 = createDelete(1, 2, 'c', 0); // delete "BC"
+    const op3 = createDelete(1, 2, 'c', 0);
 
-    // Simulate server applying op1 first, then transforming op2 & op3
-    const doc1   = applyOp(doc, op1);
+    const doc1   = applyOpDoc(doc, op1);
     const op2p   = transform(op1, op2);
-    const doc2   = applyOp(doc1, op2p);
+    const doc2   = applyOpDoc(doc1, op2p);
     const op3p1  = transform(op1, op3);
     const op3p2  = transform(op2p, op3p1);
-    const doc3   = (op3p2 !== null) ? applyOp(doc2, op3p2) : doc2;
+    const doc3   = (op3p2 !== null) ? applyOpDoc(doc2, op3p2) : doc2;
 
-    // Simulate server applying op2 first, then op1, then op3
-    const docA   = applyOp(doc, op2);
+    const docA   = applyOpDoc(doc, op2);
     const op1pA  = transform(op2, op1);
-    const docAB  = applyOp(docA, op1pA);
+    const docAB  = applyOpDoc(docA, op1pA);
     const op3pA1 = transform(op2, op3);
     const op3pA2 = transform(op1pA, op3pA1);
-    const docABC = (op3pA2 !== null) ? applyOp(docAB, op3pA2) : docAB;
+    const docABC = (op3pA2 !== null) ? applyOpDoc(docAB, op3pA2) : docAB;
 
     expect(doc3).toBe(docABC);
   });
@@ -482,18 +491,18 @@ describe('Edge Cases', () => {
   });
 
   test('insert at position 0 into empty doc', () => {
-    expect(applyOp('', createInsert(0, 'hello', 'a', 0))).toBe('hello');
+    expect(applyOp('', createInsert(0, 'hello', 'a', 0)).doc).toBe('hello');
   });
 
   test('delete from single-char doc', () => {
-    expect(applyOp('x', createDelete(0, 1, 'a', 0))).toBe('');
+    expect(applyOp('x', createDelete(0, 1, 'a', 0)).doc).toBe('');
   });
 
   test('multi-byte unicode insert and delete', () => {
-    const doc  = 'héllo';
-    const ins  = createInsert(2, '☀️', 'a', 0);
+    const doc    = 'héllo';
+    const ins    = createInsert(2, '☀️', 'a', 0);
     const result = applyOp(doc, ins);
-    expect(result).toContain('☀️');
+    expect(result.doc).toContain('☀️');
   });
 
   test('transform preserves clientId and version metadata', () => {
@@ -506,6 +515,6 @@ describe('Edge Cases', () => {
 
   test('large position insert: far beyond end clamps', () => {
     const result = applyOp('abc', createInsert(9999, 'X', 'a', 0));
-    expect(result).toBe('abcX');
+    expect(result.doc).toBe('abcX');
   });
 });

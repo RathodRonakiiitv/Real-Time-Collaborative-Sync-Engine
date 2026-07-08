@@ -17,6 +17,8 @@
  *     { type: 'join',      docId }
  *     { type: 'op',        docId, op, version }
  *     { type: 'cursor',    docId, position }
+ *     { type: 'undo',      docId }
+ *     { type: 'redo',      docId }
  *     { type: 'reconnect', docId, baseVersion, bufferedOps }
  *
  *   Server → Client:
@@ -296,6 +298,98 @@ function handleCursor(ws, data) {
   }, ws);
 }
 
+/**
+ * Handle a client undo request.
+ * Calls engine.undoOp(userId) which:
+ *   - Finds user's last op in op log
+ *   - Inverts it (insert→delete or delete→insert)
+ *   - Transforms the inverse against all subsequent server ops
+ *   - Applies it to the document
+ * The inverse op is then broadcast to all room peers as a regular sync.
+ */
+async function handleUndo(ws, data) {
+  const clientInfo = clients.get(ws);
+  if (!clientInfo?.authenticated) {
+    send(ws, { type: 'error', message: 'Not authenticated', code: 'AUTH_REQUIRED' });
+    return;
+  }
+
+  const { docId } = data;
+  const engine = engines.get(docId);
+  if (!engine) {
+    send(ws, { type: 'error', message: `Not joined to doc ${docId}`, code: 'NOT_IN_ROOM' });
+    return;
+  }
+
+  try {
+    const result = await engine.undoOp(clientInfo.userId);
+    if (result === null) {
+      send(ws, { type: 'undo_empty', docId, message: 'Nothing to undo' });
+      return;
+    }
+
+    const { undoDepth, redoDepth } = engine.getUndoRedoDepth(clientInfo.userId);
+    send(ws, { type: 'ack', docId, version: result.newVersion, undoDepth, redoDepth });
+
+    if (result.transformedOp) {
+      broadcast(docId, {
+        type:     'sync',
+        docId,
+        op:       result.transformedOp,
+        version:  result.newVersion,
+        clientId: clientInfo.userId,
+        isUndo:   true,
+      }, ws);
+    }
+  } catch (err) {
+    console.error(`[WS] Undo error doc=${docId}:`, err.message);
+    send(ws, { type: 'error', message: err.message, code: 'UNDO_ERROR' });
+  }
+}
+
+/**
+ * Handle a client redo request.
+ */
+async function handleRedo(ws, data) {
+  const clientInfo = clients.get(ws);
+  if (!clientInfo?.authenticated) {
+    send(ws, { type: 'error', message: 'Not authenticated', code: 'AUTH_REQUIRED' });
+    return;
+  }
+
+  const { docId } = data;
+  const engine = engines.get(docId);
+  if (!engine) {
+    send(ws, { type: 'error', message: `Not joined to doc ${docId}`, code: 'NOT_IN_ROOM' });
+    return;
+  }
+
+  try {
+    const result = await engine.redoOp(clientInfo.userId);
+    if (result === null) {
+      send(ws, { type: 'redo_empty', docId, message: 'Nothing to redo' });
+      return;
+    }
+
+    const { undoDepth, redoDepth } = engine.getUndoRedoDepth(clientInfo.userId);
+    send(ws, { type: 'ack', docId, version: result.newVersion, undoDepth, redoDepth });
+
+    if (result.transformedOp) {
+      broadcast(docId, {
+        type:     'sync',
+        docId,
+        op:       result.transformedOp,
+        version:  result.newVersion,
+        clientId: clientInfo.userId,
+        isRedo:   true,
+      }, ws);
+    }
+  } catch (err) {
+    console.error(`[WS] Redo error doc=${docId}:`, err.message);
+    send(ws, { type: 'error', message: err.message, code: 'REDO_ERROR' });
+  }
+}
+
 async function handleReconnect(ws, data) {
   const clientInfo = clients.get(ws);
   if (!clientInfo.authenticated) {
@@ -419,7 +513,9 @@ function createWSServer(httpServer) {
         case 'auth':      await handleAuth(ws, data);      break;
         case 'join':      await handleJoin(ws, data);      break;
         case 'op':        await handleOp(ws, data);        break;
-        case 'cursor':    handleCursor(ws, data);          break; // sync, no await needed
+        case 'cursor':    handleCursor(ws, data);          break;
+        case 'undo':      await handleUndo(ws, data);      break;
+        case 'redo':      await handleRedo(ws, data);      break;
         case 'reconnect': await handleReconnect(ws, data); break;
         default:
           send(ws, { type: 'error', message: `Unknown message type: ${data.type}`, code: 'UNKNOWN_TYPE' });

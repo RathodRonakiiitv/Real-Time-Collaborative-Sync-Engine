@@ -17,7 +17,7 @@
 
 'use strict';
 
-const { applyOp, transform, validateOp } = require('./operations');
+const { applyOp, transform, validateOp, invertOp } = require('./operations');
 
 const SNAPSHOT_INTERVAL = 50; // Snapshot every 50 ops
 
@@ -34,10 +34,16 @@ class DocumentEngine {
   constructor(docId, initialDoc = '', persistence = null) {
     this.docId       = docId;
     this.doc         = initialDoc;
-    this.version     = 0;          // monotonically-increasing server version
-    this.opLog       = [];         // immutable history: { op, version, timestamp }
+    this.version     = 0;
+    this.opLog       = [];         // { op, version, clientId, timestamp, deletedText }
     this.persistence = persistence;
     this._opsSinceSnapshot = 0;
+
+    // Per-user undo/redo stacks: userId → [ opLogIndex, ... ]
+    // Each entry is the index in opLog of an op this user applied.
+    // On undo: pop from undoStack, transform inverse, apply, push to redoStack.
+    this._undoStacks = new Map(); // userId → number[]
+    this._redoStacks = new Map(); // userId → number[]
   }
 
   /**
@@ -68,16 +74,24 @@ class DocumentEngine {
     }
 
     // Apply the transformed op
-    this.doc = applyOp(this.doc, transformedOp);
+    const { doc: newDoc, deletedText } = applyOp(this.doc, transformedOp);
+    this.doc      = newDoc;
     this.version += 1;
 
     const entry = {
-      op:        transformedOp,
-      version:   this.version,
-      clientId:  clientOp.clientId,
-      timestamp: Date.now(),
+      op:          transformedOp,
+      version:     this.version,
+      clientId:    clientOp.clientId,
+      timestamp:   Date.now(),
+      deletedText, // stored for undo inverse reconstruction
     };
     this.opLog.push(entry);
+
+    // Track this op on the user's undo stack (clear their redo stack)
+    const userId = clientOp.clientId;
+    if (!this._undoStacks.has(userId)) this._undoStacks.set(userId, []);
+    this._undoStacks.get(userId).push(this.opLog.length - 1); // index into opLog
+    this._redoStacks.set(userId, []); // new real op clears redo history
 
     // ── Persistence hooks ──────────────────────────────────
     if (this.persistence) {
@@ -144,17 +158,20 @@ class DocumentEngine {
     this.doc     = doc;
     this.version = version;
     this.opLog   = [];
+    this._undoStacks = new Map();
+    this._redoStacks = new Map();
 
-    // Rebuild the in-memory op log from the replayed ops
     for (const entry of opsToReplay) {
       const op = entry.op || entry.op_data || entry;
-      this.doc = applyOp(this.doc, op);
+      const { doc: newDoc, deletedText } = applyOp(this.doc, op);
+      this.doc      = newDoc;
       this.version += 1;
       this.opLog.push({
         op,
-        version:   this.version,
-        clientId:  entry.clientId || entry.client_id || 'replay',
-        timestamp: entry.timestamp || Date.now(),
+        version:     this.version,
+        clientId:    entry.clientId || entry.client_id || 'replay',
+        timestamp:   entry.timestamp || Date.now(),
+        deletedText: deletedText || null,
       });
     }
 
@@ -181,6 +198,148 @@ class DocumentEngine {
    */
   shouldSnapshot() {
     return this._opsSinceSnapshot >= SNAPSHOT_INTERVAL;
+  }
+
+  // ─────────────────────────────────────────────────────
+  // PER-USER SELECTIVE UNDO / REDO
+  // ─────────────────────────────────────────────────────
+
+  /**
+   * Undo the last op from a specific user.
+   *
+   * Algorithm:
+   *   1. Find the user's last op in the op log (via undoStack)
+   *   2. Compute its inverse (insert→delete, delete→insert)
+   *   3. Transform the inverse against every server op that was
+   *      applied AFTER the user's op (same logic as receiveOp)
+   *   4. Apply the transformed inverse to the document
+   *   5. Push the "undo op index" onto the redo stack
+   *
+   * This never touches another user's ops — only the inverse of
+   * the requesting user's last edit is applied.
+   *
+   * @param {string} userId
+   * @returns {{ transformedOp, newVersion, doc } | null}
+   */
+  async undoOp(userId) {
+    const undoStack = this._undoStacks.get(userId);
+    if (!undoStack || undoStack.length === 0) {
+      return null; // nothing to undo
+    }
+
+    // Pop the last op this user made
+    const logIndex = undoStack.pop();
+    const entry    = this.opLog[logIndex];
+
+    // Build the inverse op (carries deletedText for delete→insert)
+    const opWithDeletedText = { ...entry.op, deletedText: entry.deletedText };
+    let inverseOp = invertOp(opWithDeletedText);
+    inverseOp = { ...inverseOp, clientId: userId };
+
+    // Transform the inverse against all ops that were applied
+    // AFTER the original op (i.e., from logIndex+1 to end of log)
+    const subsequentOps = this.opLog.slice(logIndex + 1).map(e => e.op);
+    for (const serverOp of subsequentOps) {
+      inverseOp = transform(serverOp, inverseOp);
+      if (inverseOp === null) {
+        // The undo was completely absorbed — nothing left to apply
+        // Still pop the stack so we don't get stuck
+        this._redoStacks.get(userId)?.push(logIndex) ||
+          this._redoStacks.set(userId, [logIndex]);
+        return { transformedOp: null, newVersion: this.version, doc: this.doc };
+      }
+    }
+
+    // Apply the transformed inverse
+    const { doc: newDoc, deletedText } = applyOp(this.doc, inverseOp);
+    this.doc      = newDoc;
+    this.version += 1;
+
+    const undoEntry = {
+      op:          inverseOp,
+      version:     this.version,
+      clientId:    userId,
+      timestamp:   Date.now(),
+      deletedText,
+      isUndo:      true, // mark so we can identify undo ops in the log
+    };
+    this.opLog.push(undoEntry);
+
+    // Push to redo stack so user can redo this undo
+    if (!this._redoStacks.has(userId)) this._redoStacks.set(userId, []);
+    this._redoStacks.get(userId).push(this.opLog.length - 1);
+
+    return {
+      transformedOp: inverseOp,
+      newVersion:    this.version,
+      doc:           this.doc,
+    };
+  }
+
+  /**
+   * Redo the last undone op for a specific user.
+   * Inverts the undo op (which is itself an inverse), effectively
+   * re-applying the original edit.
+   *
+   * @param {string} userId
+   * @returns {{ transformedOp, newVersion, doc } | null}
+   */
+  async redoOp(userId) {
+    const redoStack = this._redoStacks.get(userId);
+    if (!redoStack || redoStack.length === 0) {
+      return null; // nothing to redo
+    }
+
+    const logIndex = redoStack.pop();
+    const entry    = this.opLog[logIndex];
+
+    const opWithDeletedText = { ...entry.op, deletedText: entry.deletedText };
+    let redoInverse = invertOp(opWithDeletedText);
+    redoInverse = { ...redoInverse, clientId: userId };
+
+    const subsequentOps = this.opLog.slice(logIndex + 1).map(e => e.op);
+    for (const serverOp of subsequentOps) {
+      redoInverse = transform(serverOp, redoInverse);
+      if (redoInverse === null) {
+        return { transformedOp: null, newVersion: this.version, doc: this.doc };
+      }
+    }
+
+    const { doc: newDoc, deletedText } = applyOp(this.doc, redoInverse);
+    this.doc      = newDoc;
+    this.version += 1;
+
+    const redoEntry = {
+      op:          redoInverse,
+      version:     this.version,
+      clientId:    userId,
+      timestamp:   Date.now(),
+      deletedText,
+      isRedo:      true,
+    };
+    this.opLog.push(redoEntry);
+
+    // Re-push onto undo stack so they can undo the redo
+    if (!this._undoStacks.has(userId)) this._undoStacks.set(userId, []);
+    this._undoStacks.get(userId).push(this.opLog.length - 1);
+
+    return {
+      transformedOp: redoInverse,
+      newVersion:    this.version,
+      doc:           this.doc,
+    };
+  }
+
+  /**
+   * How many ops a user can undo / redo.
+   * @param {string} userId
+   * @returns {{ undoDepth: number, redoDepth: number }}
+   */
+  getUndoRedoDepth(userId) {
+    return {
+      undoDepth: this._undoStacks.get(userId)?.length ?? 0,
+      redoDepth: this._redoStacks.get(userId)?.length ?? 0,
+    };
   }
 }
 

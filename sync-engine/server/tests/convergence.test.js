@@ -31,15 +31,17 @@ const {
  * Proves: apply(apply(doc, op1), transform(op1, op2))
  *       === apply(apply(doc, op2), transform(op2, op1))
  */
+function applyOpDoc(doc, op) { return applyOp(doc, op).doc; }
+
 function converges(doc, op1, op2) {
   const op2prime = transform(op1, op2);
   const op1prime = transform(op2, op1);
 
-  let left  = applyOp(doc, op1);
-  if (op2prime !== null) left = applyOp(left, op2prime);
+  let left  = applyOpDoc(doc, op1);
+  if (op2prime !== null) left = applyOpDoc(left, op2prime);
 
-  let right = applyOp(doc, op2);
-  if (op1prime !== null) right = applyOp(right, op1prime);
+  let right = applyOpDoc(doc, op2);
+  if (op1prime !== null) right = applyOpDoc(right, op1prime);
 
   return { left, right, converged: left === right };
 }
@@ -193,16 +195,12 @@ describe('3-Client Server-Authoritative Convergence', () => {
 
     // Server processes opA first
     const resultA = await serverEngine.receiveOp(opA, 0);
-    clientADoc = applyOp(clientADoc, opA); // Client A applied locally already
-    // Client B receives broadcast: transform against their pending opB
-    clientBDoc = applyOp(clientBDoc, resultA.transformedOp);
+    clientADoc = applyOpDoc(clientADoc, opA);
+    clientBDoc = applyOpDoc(clientBDoc, resultA.transformedOp);
 
-    // Server processes opB second
     const resultB = await serverEngine.receiveOp(opB, 0);
-    // Client A receives broadcast
-    clientADoc = applyOp(clientADoc, resultB.transformedOp);
-    // Client B applied locally already, then receives ack
-    clientBDoc = applyOp(clientBDoc, resultB.transformedOp);
+    clientADoc = applyOpDoc(clientADoc, resultB.transformedOp);
+    clientBDoc = applyOpDoc(clientBDoc, resultB.transformedOp);
 
     // Server state is canonical
     expect(clientADoc).toBe(serverEngine.getDocument());
