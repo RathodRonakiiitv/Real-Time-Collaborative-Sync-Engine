@@ -19,7 +19,9 @@ function App() {
     logs,
     connect,
     disconnect,
-    handleEditorInput
+    handleEditorInput,
+    peerCursors,
+    sendCursor
   } = useSyncEngine({
     userId,
     docId,
@@ -67,6 +69,8 @@ function App() {
           ref={editorRef} 
           status={status} 
           onChange={onTextChange} 
+          peerCursors={peerCursors}
+          onCursorMove={sendCursor}
         />
         <LogPanel logs={logs} />
       </main>

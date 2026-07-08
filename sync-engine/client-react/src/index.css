@@ -138,3 +138,26 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
 }
+
+/* ── Cursor Tooltip Overlay ──────────────────────── */
+
+.cursor-caret {
+  display: inline-block; width: 2px; height: 1.2em;
+  position: relative; vertical-align: text-bottom;
+  animation: caretBlink 1s ease-in-out infinite;
+  transition: left 0.1s ease;
+}
+
+@keyframes caretBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+.cursor-label {
+  position: absolute; top: calc(100% + 2px); left: 0;
+  font-family: var(--font-sans); font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  pointer-events: none; color: #fff; letter-spacing: 0.3px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  z-index: 10;
+}
