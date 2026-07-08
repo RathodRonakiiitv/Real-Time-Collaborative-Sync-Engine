@@ -366,14 +366,14 @@
           opsRecv++;
           currentVersion = msg.version;
           const cursorPos = editor.selectionStart;
+          // Transform peer cursor positions BEFORE applying the op
+          // so they stay accurate after the doc changes
+          transformCursorPositions(msg.op);
           applyRemoteOp(msg.op, cursorPos);
           lastSentContent = editor.value;
-          // If this sync is an undo/redo from us, update depth badges
-          if (msg.isUndo || msg.isRedo) {
-            addLog(msg.isUndo ? 'UNDO' : 'REDO', msg.clientId, formatOp(msg.op));
-          }
           updateBadges();
-          addLog(msg.op.type.toUpperCase(), msg.clientId, formatOp(msg.op));
+          const label = msg.isUndo ? 'UNDO' : msg.isRedo ? 'REDO' : msg.op.type.toUpperCase();
+          addLog(label, msg.clientId, formatOp(msg.op));
           break;
         }
 
@@ -408,9 +408,34 @@
     // ── Cursor Presence ───────────────────────────────────
 
     /**
+     * Transform all stored peer cursor positions against an incoming op.
+     * Called every time a remote op arrives so cursors don't go stale.
+     *
+     * insert(pos, text):  cursors at or after pos shift RIGHT by text.length
+     * delete(pos, len):   cursors after pos+len shift LEFT by len
+     *                     cursors inside [pos, pos+len) clamp to pos
+     */
+    function transformCursorPositions(op) {
+      for (const userId of Object.keys(peerCursors)) {
+        let p = peerCursors[userId].position;
+
+        if (op.type === 'insert') {
+          if (p >= op.position) p += op.text.length;
+        } else if (op.type === 'delete') {
+          const end = op.position + op.length;
+          if (p > end)          p -= op.length;    // after deletion: shift left
+          else if (p > op.position) p = op.position; // inside deletion: clamp
+          // before deletion: unchanged
+        }
+
+        peerCursors[userId].position = p;
+      }
+      // Re-render with updated positions (no need to call updatePresenceBar)
+      renderCursors();
+    }
+
+    /**
      * Update or create the visual caret for a peer.
-     * We render carets inside a mirror <div> that has identical
-     * font/padding to the textarea, then position them via innerHTML.
      */
     function updatePeerCursor(userId, position, color) {
       peerCursors[userId] = { position, color };
