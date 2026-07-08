@@ -190,6 +190,8 @@
     <div class="controls">
       <input type="text" id="userId"  placeholder="User ID">
       <input type="text" id="docId"   placeholder="Doc ID" value="demo-doc">
+      <button id="undoBtn"    onclick="sendUndo()" disabled title="Ctrl+Z">↩ Undo</button>
+      <button id="redoBtn"    onclick="sendRedo()" disabled title="Ctrl+Y">↪ Redo</button>
       <button id="connectBtn" onclick="toggleConnection()">Connect</button>
     </div>
   </header>
@@ -210,6 +212,14 @@
     <div class="status-indicator">
       <span>Ops recv:</span>
       <span class="badge" id="opsRecvBadge">0</span>
+    </div>
+    <div class="status-indicator">
+      <span>Undo:</span>
+      <span class="badge" id="undoBadge">0</span>
+    </div>
+    <div class="status-indicator">
+      <span>Redo:</span>
+      <span class="badge" id="redoBadge">0</span>
     </div>
     <!-- Live presence avatars appear here -->
     <div id="presenceBar"></div>
@@ -323,6 +333,9 @@
           connectBtn.disabled = false;
           setStatus('connected', `Connected as ${userIdInput.value}`);
           updateBadges();
+          updateUndoRedoBadges(0, 0);
+          undoBtn.disabled = true; // enabled once user has sent an op
+          redoBtn.disabled = true;
           addLog('JOIN', 'server', `Joined doc (v${msg.version})`);
           // Render any existing peer cursors in the room
           if (msg.cursors) {
@@ -335,6 +348,18 @@
         case 'ack':
           currentVersion = msg.version;
           updateBadges();
+          // Server sends undoDepth/redoDepth on ack after undo/redo
+          if (msg.undoDepth !== undefined || msg.redoDepth !== undefined) {
+            updateUndoRedoBadges(msg.undoDepth, msg.redoDepth);
+          }
+          break;
+
+        case 'undo_empty':
+          addLog('UNDO', 'server', '⚠ Nothing left to undo');
+          break;
+
+        case 'redo_empty':
+          addLog('REDO', 'server', '⚠ Nothing left to redo');
           break;
 
         case 'sync': {
@@ -343,6 +368,10 @@
           const cursorPos = editor.selectionStart;
           applyRemoteOp(msg.op, cursorPos);
           lastSentContent = editor.value;
+          // If this sync is an undo/redo from us, update depth badges
+          if (msg.isUndo || msg.isRedo) {
+            addLog(msg.isUndo ? 'UNDO' : 'REDO', msg.clientId, formatOp(msg.op));
+          }
           updateBadges();
           addLog(msg.op.type.toUpperCase(), msg.clientId, formatOp(msg.op));
           break;
@@ -446,6 +475,55 @@
         .replace(/ /g, '&nbsp;');
     }
 
+    // ── Undo / Redo ───────────────────────────────────────
+    const undoBtn  = document.getElementById('undoBtn');
+    const redoBtn  = document.getElementById('redoBtn');
+    const undoBadge = document.getElementById('undoBadge');
+    const redoBadge = document.getElementById('redoBadge');
+
+    function sendUndo() {
+      if (!ws || !isConnected) return;
+      const docId = document.getElementById('docId').value.trim() || 'demo-doc';
+      ws.send(JSON.stringify({ type: 'undo', docId }));
+      addLog('UNDO', 'me', 'Sent undo request');
+    }
+
+    function sendRedo() {
+      if (!ws || !isConnected) return;
+      const docId = document.getElementById('docId').value.trim() || 'demo-doc';
+      ws.send(JSON.stringify({ type: 'redo', docId }));
+      addLog('REDO', 'me', 'Sent redo request');
+    }
+
+    // Intercept Ctrl+Z / Ctrl+Y — prevent browser's native undo
+    // and send our OT-aware undo/redo to the server instead
+    editor.addEventListener('keydown', (e) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey;
+      const isRedo = (e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey));
+
+      if (isUndo && isConnected) {
+        e.preventDefault(); // stop browser's native textarea undo
+        sendUndo();
+        return;
+      }
+      if (isRedo && isConnected) {
+        e.preventDefault();
+        sendRedo();
+        return;
+      }
+    });
+
+    function updateUndoRedoBadges(undoDepth, redoDepth) {
+      if (undoDepth !== undefined) {
+        undoBadge.textContent = undoDepth;
+        undoBtn.disabled = !isConnected || undoDepth === 0;
+      }
+      if (redoDepth !== undefined) {
+        redoBadge.textContent = redoDepth;
+        redoBtn.disabled = !isConnected || redoDepth === 0;
+      }
+    }
+
     // ── Send cursor position on every keyup/click ─────────
     function sendCursor() {
       if (!ws || !isConnected) return;
@@ -491,12 +569,14 @@
         const op = { type: 'delete', position: start, length: deletedLen, clientId: userIdInput.value, version: currentVersion };
         ws.send(JSON.stringify({ type: 'op', docId, op, version: currentVersion }));
         opsSent++;
+        undoBtn.disabled = false; // user now has something to undo
         addLog('DELETE', 'me', `pos=${start} len=${deletedLen}`);
       }
       if (insertedText.length > 0) {
         const op = { type: 'insert', position: start, text: insertedText, clientId: userIdInput.value, version: currentVersion };
         ws.send(JSON.stringify({ type: 'op', docId, op, version: currentVersion }));
         opsSent++;
+        undoBtn.disabled = false; // user now has something to undo
         addLog('INSERT', 'me', `pos=${start} "${insertedText}"`);
       }
 
