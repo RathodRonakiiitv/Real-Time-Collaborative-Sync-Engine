@@ -1,10 +1,11 @@
 import React from 'react';
-import { Zap } from 'lucide-react';
+import { Zap, History, Activity } from 'lucide-react';
 
 export function Header({ 
   userId, setUserId, 
   docId, setDocId, 
-  status, connect, disconnect 
+  status, connect, disconnect,
+  rightPanel, setRightPanel,
 }) {
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
@@ -19,6 +20,34 @@ export function Header({
       </div>
       
       <div style={styles.controls}>
+        {/* Panel toggle */}
+        {isConnected && (
+          <div style={styles.toggleGroup}>
+            <button
+              className="btn"
+              onClick={() => setRightPanel('logs')}
+              style={{
+                ...styles.toggleBtn,
+                background: rightPanel === 'logs' ? 'var(--accent)' : 'var(--surface-2)',
+              }}
+              title="Operation Log"
+            >
+              <Activity size={13} />
+            </button>
+            <button
+              className="btn"
+              onClick={() => setRightPanel('history')}
+              style={{
+                ...styles.toggleBtn,
+                background: rightPanel === 'history' ? 'var(--accent)' : 'var(--surface-2)',
+              }}
+              title="Version History"
+            >
+              <History size={13} />
+            </button>
+          </div>
+        )}
+
         <input 
           className="input-field"
           type="text" 
@@ -89,5 +118,25 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-  }
+  },
+  toggleGroup: {
+    display: 'flex',
+    gap: '2px',
+    background: 'var(--surface-2)',
+    borderRadius: '6px',
+    padding: '2px',
+    border: '1px solid var(--border)',
+  },
+  toggleBtn: {
+    padding: '5px 8px',
+    borderRadius: '4px',
+    border: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '11px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    minWidth: 'unset',
+  },
 };

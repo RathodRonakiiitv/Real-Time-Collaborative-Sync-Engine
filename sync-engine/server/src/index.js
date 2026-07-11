@@ -20,9 +20,10 @@ const path = require('path');
 
 const { runMigrations }   = require('./db/migrations');
 const { pool }            = require('./db/pool');
-const { createWSServer, getServerState } = require('./ws/server');
+const { createWSServer, getServerState, getEngine, reconcileOnStartup, cleanupAllPresence } = require('./ws/server');
 const { getRedisClient, closeRedis }     = require('./redis/client');
 const { generateToken }   = require('./auth/jwt');
+const { foldDocument, getPersistedHistory } = require('./db/history');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -39,7 +40,7 @@ const MIME_TYPES = {
   '.svg':  'image/svg+xml',
 };
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   // ── REST API endpoints ───────────────────────────────
   if (req.method === 'GET' && req.url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -60,6 +61,80 @@ const server = http.createServer((req, res) => {
     const token = generateToken(userId);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ token, userId }));
+    return;
+  }
+
+  // ── History API: fold-based document reconstruction ────
+
+  // GET /api/history/:docId — operation metadata list
+  const historyListMatch = req.method === 'GET' && req.url?.match(/^\/api\/history\/([^/]+)$/);
+  if (historyListMatch) {
+    const docId = decodeURIComponent(historyListMatch[1]);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const limit  = parseInt(url.searchParams.get('limit') || '100', 10);
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+
+    try {
+      // Try in-memory engine first (fast path)
+      const engine = getEngine(docId);
+      if (engine && engine.opLog.length > 0) {
+        const history = engine.getHistory(
+          Math.max(1, offset + 1),
+          Math.min(offset + limit, engine.getVersion())
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ops: history,
+          total: engine.getVersion(),
+          currentVersion: engine.getVersion(),
+          source: 'memory',
+        }));
+        return;
+      }
+
+      // Fallback: PostgreSQL
+      const result = await getPersistedHistory(docId, limit, offset);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ...result, source: 'postgresql' }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // GET /api/history/:docId/at/:version — fold-reconstructed document
+  const historyAtMatch = req.method === 'GET' && req.url?.match(/^\/api\/history\/([^/]+)\/at\/(\d+)$/);
+  if (historyAtMatch) {
+    const docId        = decodeURIComponent(historyAtMatch[1]);
+    const targetVersion = parseInt(historyAtMatch[2], 10);
+
+    try {
+      // Try in-memory engine fold (fast path — all ops in RAM)
+      const engine = getEngine(docId);
+      if (engine && targetVersion <= engine.getVersion()) {
+        const result = engine.getDocumentAtVersion(targetVersion);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ...result,
+          currentVersion: engine.getVersion(),
+          source: 'memory_fold',
+        }));
+        return;
+      }
+
+      // Fallback: PostgreSQL fold (snapshot + ops → applyOp reduce)
+      const result = await foldDocument(docId, targetVersion);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ...result,
+        source: result.foldedFromSnapshot ? 'postgresql_fold_from_snapshot' : 'postgresql_fold_from_zero',
+      }));
+    } catch (err) {
+      const status = err instanceof RangeError ? 400 : 500;
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
     return;
   }
 
@@ -102,10 +177,11 @@ async function start() {
   console.log('  Real-Time Collaborative Sync Engine');
   console.log('═══════════════════════════════════════════════');
 
-  // 1. Connect to Redis
+  // 1. Connect to Redis and reconcile presence
   try {
     getRedisClient();
     console.log('[Boot] Redis client initialized');
+    await reconcileOnStartup();
   } catch (err) {
     console.error('[Boot] Redis connection failed:', err.message);
     console.warn('[Boot] Continuing without Redis (ops won\'t be cached)');
@@ -145,6 +221,7 @@ async function shutdown(signal) {
   });
 
   try {
+    await cleanupAllPresence();
     await closeRedis();
     console.log('[Shutdown] Redis disconnected');
   } catch (e) { /* ignore */ }

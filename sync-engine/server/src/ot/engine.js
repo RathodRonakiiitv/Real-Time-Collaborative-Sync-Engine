@@ -341,6 +341,70 @@ class DocumentEngine {
       redoDepth: this._redoStacks.get(userId)?.length ?? 0,
     };
   }
+
+  // ─────────────────────────────────────────────────────
+  // FOLD-BASED DOCUMENT RECONSTRUCTION
+  // ─────────────────────────────────────────────────────
+
+  /**
+   * Reconstruct the document at a specific version by folding
+   * operations through applyOp() from version 0.
+   *
+   * This is a genuine event-sourcing replay — not a snapshot lookup.
+   * Even if a snapshot exists at the target version, we reconstruct
+   * by folding to ensure correctness.
+   *
+   * @param {number} targetVersion - Version to reconstruct (1-indexed)
+   * @returns {{ doc: string, version: number, opsApplied: number }}
+   */
+  getDocumentAtVersion(targetVersion) {
+    if (targetVersion < 0) {
+      throw new RangeError(`targetVersion must be non-negative, got: ${targetVersion}`);
+    }
+    if (targetVersion > this.version) {
+      throw new RangeError(`targetVersion ${targetVersion} exceeds current version ${this.version}`);
+    }
+
+    // Version 0 is always the empty initial document
+    if (targetVersion === 0) {
+      return { doc: '', version: 0, opsApplied: 0 };
+    }
+
+    // Fold: start from empty string, apply ops [0..targetVersion-1]
+    let doc = '';
+    const opsToApply = this.opLog.slice(0, targetVersion);
+    for (const entry of opsToApply) {
+      const result = applyOp(doc, entry.op);
+      doc = result.doc;
+    }
+
+    return { doc, version: targetVersion, opsApplied: opsToApply.length };
+  }
+
+  /**
+   * Get operation history metadata for a version range.
+   * Returns lightweight metadata (no full document content).
+   *
+   * @param {number} [fromVersion=0] - Start version (inclusive, 1-indexed)
+   * @param {number} [toVersion]     - End version (inclusive), defaults to current
+   * @returns {Array<{ version, clientId, type, position, textLength, timestamp }>}
+   */
+  getHistory(fromVersion = 1, toVersion = this.version) {
+    const from = Math.max(0, fromVersion - 1); // opLog is 0-indexed
+    const to   = Math.min(toVersion, this.version);
+
+    return this.opLog.slice(from, to).map(entry => ({
+      version:    entry.version,
+      clientId:   entry.clientId,
+      type:       entry.op.type,
+      position:   entry.op.position,
+      textLength: entry.op.type === 'insert' ? entry.op.text.length : entry.op.length,
+      text:       entry.op.type === 'insert' ? entry.op.text.slice(0, 80) : null, // truncate for display
+      timestamp:  entry.timestamp,
+      isUndo:     !!entry.isUndo,
+      isRedo:     !!entry.isRedo,
+    }));
+  }
 }
 
 module.exports = { DocumentEngine, SNAPSHOT_INTERVAL };

@@ -161,3 +161,9 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   z-index: 10;
 }
+
+/* Typing Indicator Animation */
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.6; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}

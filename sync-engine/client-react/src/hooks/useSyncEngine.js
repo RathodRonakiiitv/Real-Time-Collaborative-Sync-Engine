@@ -18,11 +18,14 @@ export function useSyncEngine({ userId, docId, editorRef }) {
   const [opsRecv, setOpsRecv]         = useState(0);
   const [logs, setLogs]               = useState([]);
   const [peerCursors, setPeerCursors] = useState({}); // userId → { position, color }
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [typingUsers, setTypingUsers] = useState(new Set());
 
   const wsRef            = useRef(null);
   const lastSentContent  = useRef('');
   const versionRef       = useRef(0);
   const connectionIntent = useRef(false);
+  const typingDebounce   = useRef(null);
 
   const addLog = useCallback((type, from, detail) => {
     setLogs(prev => [{ id: Date.now() + Math.random(), type, from, detail }, ...prev].slice(0, 50));
@@ -75,6 +78,9 @@ export function useSyncEngine({ userId, docId, editorRef }) {
                 initial[uid] = { position: cur.position, color: cur.color };
               }
               setPeerCursors(initial);
+            }
+            if (msg.presence) {
+              setActiveUsers(msg.presence);
             }
             break;
 
@@ -138,6 +144,20 @@ export function useSyncEngine({ userId, docId, editorRef }) {
             addLog('LEAVE', msg.userId, 'left the document');
             break;
 
+          // ── PRESENCE & TYPING ──────────────────────────
+          case 'presence':
+            setActiveUsers(msg.users || []);
+            break;
+
+          case 'typing':
+            setTypingUsers(prev => {
+              const next = new Set(prev);
+              if (msg.isTyping) next.add(msg.userId);
+              else next.delete(msg.userId);
+              return next;
+            });
+            break;
+
           case 'rate_limited':
             addLog('LIMIT', 'server', msg.message);
             break;
@@ -154,6 +174,8 @@ export function useSyncEngine({ userId, docId, editorRef }) {
         wsRef.current = null;
         if (connectionIntent.current) setStatus('disconnected');
         setPeerCursors({});
+        setActiveUsers([]);
+        setTypingUsers(new Set());
       };
 
       ws.onerror = () => setStatus('disconnected');
@@ -170,7 +192,30 @@ export function useSyncEngine({ userId, docId, editorRef }) {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     setStatus('disconnected');
     setPeerCursors({});
+    setActiveUsers([]);
+    setTypingUsers(new Set());
+    if (typingDebounce.current) clearTimeout(typingDebounce.current);
   }, []);
+
+  const sendTyping = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    
+    // Clear existing timer if any
+    if (typingDebounce.current) {
+      clearTimeout(typingDebounce.current);
+    } else {
+      // First keystroke -> send typing_start
+      wsRef.current.send(JSON.stringify({ type: 'typing_start', docId }));
+    }
+
+    // Auto-stop locally after 3s to match server timeout
+    typingDebounce.current = setTimeout(() => {
+      typingDebounce.current = null;
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'typing_stop', docId }));
+      }
+    }, 3000);
+  }, [docId]);
 
   const handleEditorInput = useCallback(() => {
     if (!wsRef.current || status !== 'connected' || !editorRef.current) return;
@@ -210,8 +255,8 @@ export function useSyncEngine({ userId, docId, editorRef }) {
 
   return {
     status, version, opsSent, opsRecv, logs,
-    peerCursors,  // NEW: { userId: { position, color } }
-    sendCursor,   // NEW: call on click/keyup to broadcast position
+    peerCursors, activeUsers, typingUsers,
+    sendCursor, sendTyping,
     connect, disconnect, handleEditorInput,
   };
 }

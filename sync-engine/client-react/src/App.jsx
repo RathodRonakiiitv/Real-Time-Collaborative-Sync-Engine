@@ -3,11 +3,14 @@ import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import { Editor } from './components/Editor';
 import { LogPanel } from './components/LogPanel';
+import { VersionHistory } from './components/VersionHistory';
+import { AwarenessBar } from './components/AwarenessBar';
 import { useSyncEngine } from './hooks/useSyncEngine';
 
 function App() {
   const [userId, setUserId] = useState(() => 'user-' + Math.random().toString(36).slice(2, 6));
   const [docId, setDocId] = useState('demo-doc');
+  const [rightPanel, setRightPanel] = useState('logs'); // 'logs' | 'history'
   
   const editorRef = useRef(null);
 
@@ -21,7 +24,10 @@ function App() {
     disconnect,
     handleEditorInput,
     peerCursors,
-    sendCursor
+    sendCursor,
+    activeUsers,
+    typingUsers,
+    sendTyping
   } = useSyncEngine({
     userId,
     docId,
@@ -31,6 +37,7 @@ function App() {
   // Debounce editor input handling
   const inputTimeout = useRef(null);
   const onTextChange = () => {
+    sendTyping();
     if (inputTimeout.current) clearTimeout(inputTimeout.current);
     inputTimeout.current = setTimeout(() => {
       handleEditorInput();
@@ -56,6 +63,8 @@ function App() {
         status={status}
         connect={connect}
         disconnect={disconnect}
+        rightPanel={rightPanel}
+        setRightPanel={setRightPanel}
       />
       <StatusBar 
         status={status}
@@ -64,6 +73,12 @@ function App() {
         opsRecv={opsRecv}
       />
       
+      <AwarenessBar 
+        activeUsers={activeUsers}
+        typingUsers={typingUsers}
+        currentUserId={userId}
+      />
+
       <main className="main-content">
         <Editor 
           ref={editorRef} 
@@ -72,7 +87,15 @@ function App() {
           peerCursors={peerCursors}
           onCursorMove={sendCursor}
         />
-        <LogPanel logs={logs} />
+        {rightPanel === 'history' ? (
+          <VersionHistory 
+            docId={docId}
+            currentVersion={version}
+            status={status}
+          />
+        ) : (
+          <LogPanel logs={logs} />
+        )}
       </main>
     </div>
   );
