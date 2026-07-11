@@ -19,7 +19,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { runMigrations }   = require('./db/migrations');
-const { pool }            = require('./db/pool');
+const { closeMongo }            = require('./db/pool');
 const { createWSServer, getServerState, getEngine, reconcileOnStartup, cleanupAllPresence } = require('./ws/server');
 const { getRedisClient, closeRedis }     = require('./redis/client');
 const { generateToken }   = require('./auth/jwt');
@@ -227,8 +227,8 @@ async function shutdown(signal) {
   } catch (e) { /* ignore */ }
 
   try {
-    await pool.end();
-    console.log('[Shutdown] PostgreSQL pool closed');
+    await closeMongo();
+    console.log('[Shutdown] MongoDB closed');
   } catch (e) { /* ignore */ }
 
   process.exit(0);

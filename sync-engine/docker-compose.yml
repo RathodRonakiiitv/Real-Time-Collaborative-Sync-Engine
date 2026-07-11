@@ -11,18 +11,18 @@ services:
       timeout: 3s
       retries: 5
 
-  postgres:
-    image: postgres:16-alpine
+  mongodb:
+    image: mongo:7.0
     ports:
-      - '5432:5432'
+      - '27017:27017'
     environment:
-      POSTGRES_USER: syncuser
-      POSTGRES_PASSWORD: syncpass
-      POSTGRES_DB: syncengine
+      MONGO_INITDB_ROOT_USERNAME: syncuser
+      MONGO_INITDB_ROOT_PASSWORD: syncpass
+      MONGO_INITDB_DATABASE: syncengine
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      - mongo-data:/data/db
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U syncuser -d syncengine']
+      test: ['CMD', 'mongosh', '--eval', 'db.adminCommand("ping")']
       interval: 5s
       timeout: 3s
       retries: 5
@@ -34,19 +34,15 @@ services:
     environment:
       PORT: 3000
       REDIS_URL: redis://redis:6379
-      PG_HOST: postgres
-      PG_PORT: 5432
-      PG_USER: syncuser
-      PG_PASSWORD: syncpass
-      PG_DATABASE: syncengine
+      MONGO_URI: mongodb://syncuser:syncpass@mongodb:27017/syncengine?authSource=admin
       JWT_SECRET: change-me-in-production
       RATE_LIMIT_OPS_PER_SEC: 30
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
+      mongodb:
         condition: service_healthy
 
 volumes:
   redis-data:
-  pg-data:
+  mongo-data:

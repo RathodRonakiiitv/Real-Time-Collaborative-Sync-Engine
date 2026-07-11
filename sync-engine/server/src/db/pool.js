@@ -1,27 +1,24 @@
-/**
- * PostgreSQL Connection Pool
- * ==========================================================
- * Provides a shared connection pool for all database modules.
- * Configured via environment variables (or .env file).
- * ==========================================================
- */
+const { MongoClient } = require('mongodb');
 
-'use strict';
+let db = null;
+let client = null;
 
-const { Pool } = require('pg');
+async function connectMongo() {
+  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/syncengine';
+  client = new MongoClient(uri);
+  await client.connect();
+  db = client.db();
+  console.log('[MongoDB] Connected to database');
+  return db;
+}
 
-const pool = new Pool({
-  host:     process.env.PG_HOST     || '127.0.0.1',
-  port:     parseInt(process.env.PG_PORT || '5432', 10),
-  user:     process.env.PG_USER     || 'syncuser',
-  password: process.env.PG_PASSWORD || 'syncpass',
-  database: process.env.PG_DATABASE || 'syncengine',
-  max:      20,
-  idleTimeoutMillis: 30000,
-});
+function getDb() {
+  if (!db) throw new Error('MongoDB not initialized');
+  return db;
+}
 
-pool.on('error', (err) => {
-  console.error('[PostgreSQL] Unexpected pool error:', err.message);
-});
+async function closeMongo() {
+  if (client) await client.close();
+}
 
-module.exports = { pool };
+module.exports = { connectMongo, getDb, closeMongo };
