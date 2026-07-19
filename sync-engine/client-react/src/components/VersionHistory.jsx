@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { History, Clock, ChevronLeft, ChevronRight, Play, Pause } from 'lucide-react';
 
+// Use VITE_SERVER_URL for production (Railway), empty string for dev (Vite proxy handles it)
+const SERVER_BASE = import.meta.env.VITE_SERVER_URL || '';
+
 export function VersionHistory({ docId, currentVersion, status }) {
   const [targetVersion, setTargetVersion] = useState(currentVersion);
   const [previewDoc, setPreviewDoc] = useState('');
@@ -17,7 +20,7 @@ export function VersionHistory({ docId, currentVersion, status }) {
   // Fetch history metadata when docId or currentVersion changes
   useEffect(() => {
     if (!docId || !isConnected) return;
-    fetch(`/api/history/${encodeURIComponent(docId)}?limit=200`)
+    fetch(`${SERVER_BASE}/api/history/${encodeURIComponent(docId)}?limit=200`)
       .then(r => r.json())
       .then(data => {
         if (data.ops) setHistory(data.ops);
@@ -42,7 +45,7 @@ export function VersionHistory({ docId, currentVersion, status }) {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/history/${encodeURIComponent(docId)}/at/${version}`);
+        const res = await fetch(`${SERVER_BASE}/api/history/${encodeURIComponent(docId)}/at/${version}`);
         const data = await res.json();
         if (data.doc !== undefined) {
           setPreviewDoc(data.doc);

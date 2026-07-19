@@ -40,7 +40,32 @@ const MIME_TYPES = {
   '.svg':  'image/svg+xml',
 };
 
+// ─────────────────────────────────────────────────────────
+// CORS HELPER
+// ─────────────────────────────────────────────────────────
+// In production the React frontend (*.vercel.app) is a different
+// origin from this server (*.railway.app). We must add CORS headers
+// to every HTTP response so browsers allow cross-origin requests.
+// Set ALLOWED_ORIGIN env var to your Vercel URL for stricter CORS
+// (e.g. https://your-app.vercel.app). Defaults to '*' for open access.
+
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+
+function setCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
 const server = http.createServer(async (req, res) => {
+  // ── CORS preflight ──────────────────────────────────
+  setCorsHeaders(res);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   // ── REST API endpoints ───────────────────────────────
   if (req.method === 'GET' && req.url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });

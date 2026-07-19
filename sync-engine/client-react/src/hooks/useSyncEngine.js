@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+// ─── Production vs Dev server URL ────────────────────────────────────────────
+// In dev, Vite proxies /api and /socket to localhost:3001 (see vite.config.js).
+// In production (Vercel → Railway), set VITE_SERVER_URL to the Railway domain.
+// Example: VITE_SERVER_URL=https://sync-engine-server.up.railway.app
+const SERVER_BASE = import.meta.env.VITE_SERVER_URL || '';
+
 // Deterministic color from userId — matches server palette
 const CURSOR_COLORS = [
   '#f87171','#fb923c','#facc15','#34d399',
@@ -43,12 +49,20 @@ export function useSyncEngine({ userId, docId, editorRef }) {
     connectionIntent.current = true;
 
     try {
-      const res  = await fetch(`/api/token?userId=${encodeURIComponent(userId)}`);
+      const res  = await fetch(`${SERVER_BASE}/api/token?userId=${encodeURIComponent(userId)}`);
       const data = await res.json();
       if (!connectionIntent.current) return;
 
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.host}/socket?token=${encodeURIComponent(data.token)}`;
+      // If SERVER_BASE is set, derive the wss:// URL from it.
+      // Otherwise fall back to the current page's host (dev mode with Vite proxy).
+      let wsUrl;
+      if (SERVER_BASE) {
+        const wsBase = SERVER_BASE.replace(/^https/, 'wss').replace(/^http/, 'ws');
+        wsUrl = `${wsBase}/socket?token=${encodeURIComponent(data.token)}`;
+      } else {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${wsProtocol}//${window.location.host}/socket?token=${encodeURIComponent(data.token)}`;
+      }
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
